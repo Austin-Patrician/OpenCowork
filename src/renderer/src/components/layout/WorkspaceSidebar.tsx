@@ -17,6 +17,7 @@ import {
   FolderOpen,
   GitBranch,
   History,
+  Image,
   Loader2,
   MessageSquare,
   Monitor,
@@ -431,7 +432,7 @@ export function WorkspaceSidebar(): React.JSX.Element {
     !drawPageOpen &&
     !translatePageOpen &&
     !tasksPageOpen
-  const featureMenuActive = resourcesPageOpen || skillsPageOpen
+  const featureMenuActive = resourcesPageOpen || skillsPageOpen || drawPageOpen
   const sessionsByProject = useMemo(() => {
     const next = new Map<string, SessionListItem[]>()
     for (const session of sessions) {
@@ -1116,6 +1117,18 @@ export function WorkspaceSidebar(): React.JSX.Element {
                   >
                     <FolderOpen className="size-3.5 shrink-0" />
                     <span className="truncate">{t('navRail.resources')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => useUIStore.getState().openDrawPage()}
+                    className={cn(
+                      'flex h-7 w-full items-center gap-2 px-2 text-[12px] font-medium transition-colors',
+                      SIDEBAR_TREE_ROW_CLASS,
+                      drawPageOpen ? SIDEBAR_TREE_ACTIVE_CLASS : SIDEBAR_TREE_SUBITEM_HOVER_CLASS
+                    )}
+                  >
+                    <Image className="size-3.5 shrink-0" />
+                    <span className="truncate">{t('navRail.draw')}</span>
                   </button>
                   <button
                     type="button"
