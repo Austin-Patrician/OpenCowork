@@ -2334,17 +2334,39 @@ function formatAnthropicMessages(
             }
           case 'tool_use':
             return { type: 'tool_use', id: block.id, name: block.name, input: block.input }
-          case 'tool_result':
+          case 'tool_result': {
+            let formattedContent: unknown = block.content
+            if (Array.isArray(block.content)) {
+              formattedContent = block.content.map((contentBlock) => {
+                if (contentBlock.type === 'image') {
+                  return {
+                    type: 'image',
+                    source: {
+                      type: contentBlock.source.type,
+                      media_type: contentBlock.source.mediaType,
+                      data: contentBlock.source.data
+                    }
+                  }
+                }
+                return contentBlock
+              })
+            }
             return {
               type: 'tool_result',
               tool_use_id: block.toolUseId,
-              content: block.content,
+              content: formattedContent,
               ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
             }
+          }
           case 'image':
             return {
               type: 'image',
-              source: block.source,
+              source: {
+                type: block.source.type,
+                media_type: block.source.mediaType,
+                data: block.source.data,
+                ...(block.source.url ? { url: block.source.url } : {})
+              },
               ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
             }
         }
