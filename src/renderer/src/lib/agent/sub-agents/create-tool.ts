@@ -539,6 +539,9 @@ export function createTaskTool(providerGetter: () => ProviderConfig): ToolHandle
     },
     execute: async (input, ctx) => {
       if (input.run_in_background) {
+        if (!useSettingsStore.getState().teamToolsEnabled) {
+          return encodeToolError('Team Tools are disabled in Settings.')
+        }
         return executeBackgroundTeammate(input, ctx)
       }
 
@@ -651,6 +654,7 @@ export function createTaskTool(providerGetter: () => ProviderConfig): ToolHandle
         subAgentLimiter.release()
       }
     },
-    requiresApproval: (input) => !!input.run_in_background
+    requiresApproval: (input) =>
+      !!input.run_in_background && useSettingsStore.getState().teamToolsEnabled
   }
 }

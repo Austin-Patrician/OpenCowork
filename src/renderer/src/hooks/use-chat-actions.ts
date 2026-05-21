@@ -32,7 +32,7 @@ import {
 } from '@renderer/lib/agent/sub-agents/create-tool'
 import type { SubAgentEvent } from '@renderer/lib/agent/sub-agents/types'
 import { abortAllTeammates } from '@renderer/lib/agent/teams/teammate-runner'
-import { TEAM_TOOL_NAMES } from '@renderer/lib/agent/teams/register'
+import { filterTeamToolDefinitions } from '@renderer/lib/agent/teams/register'
 import { teamEvents } from '@renderer/lib/agent/teams/events'
 import { useTeamStore, type ActiveTeam } from '@renderer/stores/team-store'
 import { ipcClient } from '@renderer/lib/ipc/ipc-client'
@@ -132,7 +132,8 @@ import { confirm } from '@renderer/components/ui/confirm-dialog'
 import {
   registerPluginTools,
   unregisterPluginTools,
-  isPluginToolsRegistered
+  isPluginToolsRegistered,
+  getDefaultPluginToolNamesForType
 } from '@renderer/lib/channel/plugin-tools'
 import { useMcpStore } from '@renderer/stores/mcp-store'
 import {
@@ -3442,13 +3443,11 @@ export function useChatActions(): {
 
           // Filter out team tools when the feature is disabled. Capture after registration changes.
           const allToolDefs = toolRegistry.getDefinitions()
-          const finalToolDefs = allToolDefs
+          const finalToolDefs = filterTeamToolDefinitions(allToolDefs, settings.teamToolsEnabled)
           let finalEffectiveToolDefs =
             mode === 'chat'
-              ? chatModeToolDefs
-              : settings.teamToolsEnabled
-                ? finalToolDefs
-                : finalToolDefs.filter((t) => !TEAM_TOOL_NAMES.has(t.name))
+              ? filterTeamToolDefinitions(chatModeToolDefs, settings.teamToolsEnabled)
+              : finalToolDefs
 
           // Plan mode: restrict to read-only + planning tools
           const isPlanMode = useUIStore.getState().isPlanModeEnabled(sessionId)
@@ -3560,7 +3559,12 @@ export function useChatActions(): {
             const channelDescriptor = channelMeta
               ? useChannelStore.getState().getDescriptor(channelMeta.type)
               : undefined
-            const toolNames = channelDescriptor?.tools ?? []
+            const toolNames = Array.from(
+              new Set([
+                ...(channelDescriptor?.tools ?? []),
+                ...getDefaultPluginToolNamesForType(channelMeta?.type)
+              ])
+            )
             const enabledTools = toolNames.filter((name) => channelMeta?.tools?.[name] !== false)
             const senderLabel = session.pluginSenderName || session.pluginSenderId || 'unknown'
             const channelCtx = [
