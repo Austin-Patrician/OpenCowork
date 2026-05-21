@@ -519,9 +519,7 @@ export function AppPluginPanel(): React.JSX.Element {
 
                   <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_16rem] sm:items-center">
                     <div>
-                      <p className="text-xs font-medium">
-                        {t('plugin.browser.userDataSource')}
-                      </p>
+                      <p className="text-xs font-medium">{t('plugin.browser.userDataSource')}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {t('plugin.browser.userDataSourceDesc')}
                       </p>
