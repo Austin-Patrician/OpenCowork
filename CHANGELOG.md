@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.105] - 2026-05-24
+
+### Changed
+
+- Reworked the draw page image-generation flow with richer prompt optimization, style blending, and image-quality controls.
+- Improved OpenAI image provider routing and Responses compatibility so image requests carry the right generation settings across providers.
+- Expanded draw history, error reporting, and chat-mode prompt context so failed runs and optimized prompts surface more useful diagnostics.
+
+### Added
+
+- Added prompt-style presets and a user core suggestion field to help shape image prompts before generation.
+- Added richer error details for image-generation failures, including provider and request metadata when no image output is returned.
+
+### Fixed
+
+- Fixed image-generation handling for transparent-background and no-output cases across the draw workflow.
+
 ## [0.9.104] - 2026-05-23
 
 ### Changed
