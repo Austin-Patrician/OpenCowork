@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.107] - 2026-05-24
+
+### Added
+
+- Added automatic memory summarization system with backend pipeline, frontend panel, and dynamic context-injection into agent prompts.
+
 ## [0.9.106] - 2026-05-24
 
 ### Added
