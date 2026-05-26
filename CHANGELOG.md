@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.109] - 2026-05-26
+
+### Added
+
+- Added goal runtime service support for blocked and usage-limited goal states so active goals can persist, resume, or pause based on blocker and usage conditions.
+- Added dedicated browser tool cards and browser tool name grouping so browser tool calls render consistently in assistant messages.
+- Added a Xiaomi coding preset and fast-route model selection support for separate main and fast model workflows.
+
+### Changed
+
+- Reworked goal persistence, schema migration, and event emission to support objective replacement, blocked audits, usage limits, and live elapsed-time tracking.
+- Improved browser handling with shared built-in storage cleanup, more resilient webview JSON parsing, and screenshot encoding that preserves the native image format.
+- Refined the chat composer, working-folder picker, sidebar and project navigation, and task calendar so project-scoped sessions and queued messages behave more predictably.
+- Updated OpenAI Responses websocket session scoping in the cron background runtime so agent runs use distinct connection keys.
+
+### Removed
+
+- Removed placeholder code-compatible `LSP` and worktree tool stubs from the code-compatible tool catalog.
+
 ## [0.9.108] - 2026-05-25
 
 ### Added
