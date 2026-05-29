@@ -83,6 +83,7 @@ import { listCommands, type CommandCatalogItem } from '@renderer/lib/commands/co
 import { useMcpStore } from '@renderer/stores/mcp-store'
 import { usePlanStore } from '@renderer/stores/plan-store'
 import { useGoalStore } from '@renderer/stores/goal-store'
+import { useSkillsStore } from '@renderer/stores/skills-store'
 import { validateGoalObjective } from '@renderer/lib/agent/goal-context'
 import {
   clearPendingSessionMessages,
@@ -323,6 +324,13 @@ const defaultRecommendationKeys: Record<AppMode, string> = {
 interface FileSearchItem {
   name: string
   path: string
+}
+
+interface SlashSuggestionItem {
+  key: string
+  name: string
+  summary: string
+  kind: 'command' | 'skill'
 }
 
 const EMPTY_QUEUED_MESSAGES: PendingSessionMessageItem[] = []
@@ -744,6 +752,13 @@ export function InputArea({
     return targetSession?.sshConnectionId ?? activeProject?.sshConnectionId ?? null
   })
   const showInlineClearConversation = false
+  const { installedSkills, skillsLoading, loadSkills } = useSkillsStore(
+    useShallow((s) => ({
+      installedSkills: s.skills,
+      skillsLoading: s.loading,
+      loadSkills: s.loadSkills
+    }))
+  )
   const { activeSessionId, hasMessages, clearSessionMessages } = useChatStore(
     useShallow((s) => {
       const targetSessionId = sessionId ?? s.activeSessionId
@@ -1116,25 +1131,45 @@ export function InputArea({
   const fileQuery = activeFileMention?.query.trim() ?? ''
   const fileMenuOpen = projectScoped && Boolean(activeFileMention)
   const slashQuery = React.useMemo(() => getSlashCommandQuery(text), [text])
-  const filteredSlashCommands = React.useMemo(() => {
+  const filteredSlashSuggestions = React.useMemo(() => {
     const query = slashQuery ?? ''
-    const commandsByName = new Map<string, CommandCatalogItem>()
+    const suggestionsByIdentity = new Map<string, SlashSuggestionItem>()
+
     for (const command of [...BUILTIN_SLASH_COMMANDS, ...slashCommands]) {
-      commandsByName.set(command.name, command)
+      suggestionsByIdentity.set(`command:${command.name.toLowerCase()}`, {
+        key: `command:${command.name}`,
+        name: command.name,
+        summary: command.summary,
+        kind: 'command'
+      })
     }
-    return [...commandsByName.values()]
-      .map((command) => ({ command, score: scoreSlashCommand(command.name, query) }))
+
+    for (const skill of installedSkills) {
+      suggestionsByIdentity.set(`skill:${skill.name.toLowerCase()}`, {
+        key: `skill:${skill.name}`,
+        name: skill.name,
+        summary: skill.description,
+        kind: 'skill'
+      })
+    }
+
+    return [...suggestionsByIdentity.values()]
+      .map((item) => ({ item, score: scoreSlashCommand(item.name, query) }))
       .filter((item) => Number.isFinite(item.score))
       .sort((left, right) => {
         if (left.score !== right.score) return left.score - right.score
-        return left.command.name.localeCompare(right.command.name, undefined, {
+        if (left.item.kind !== right.item.kind) {
+          return left.item.kind === 'command' ? -1 : 1
+        }
+        return left.item.name.localeCompare(right.item.name, undefined, {
           sensitivity: 'base'
         })
       })
       .slice(0, MAX_SLASH_COMMAND_RESULTS)
-      .map((item) => item.command)
-  }, [slashCommands, slashQuery])
+      .map((item) => item.item)
+  }, [installedSkills, slashCommands, slashQuery])
   const slashMenuOpen = slashQuery !== null
+  const slashSuggestionsLoading = slashCommandsLoading || skillsLoading
 
   React.useEffect(() => {
     if (!slashMenuOpen) {
@@ -1146,8 +1181,8 @@ export function InputArea({
     let cancelled = false
     setSlashCommandsLoading(true)
 
-    void listCommands()
-      .then((commands) => {
+    void Promise.all([listCommands(), loadSkills()])
+      .then(([commands]) => {
         if (cancelled) return
         setSlashCommands(commands)
       })
@@ -1159,7 +1194,7 @@ export function InputArea({
     return () => {
       cancelled = true
     }
-  }, [slashMenuOpen, slashQuery])
+  }, [loadSkills, slashMenuOpen])
 
   React.useEffect(() => {
     setSelectedSlashIndex(0)
@@ -1260,6 +1295,26 @@ export function InputArea({
       })
     },
     [applyEditorStateFromSerializedText, focusInputAtEnd, selectedFiles]
+  )
+  const selectSlashSkill = React.useCallback(
+    (skillName: string) => {
+      setSelectedSkill(skillName)
+      applyEditorStateFromSerializedText('')
+      requestAnimationFrame(() => {
+        focusInputAtEnd()
+      })
+    },
+    [applyEditorStateFromSerializedText, focusInputAtEnd]
+  )
+  const applySlashSuggestion = React.useCallback(
+    (item: SlashSuggestionItem) => {
+      if (item.kind === 'skill') {
+        selectSlashSkill(item.name)
+        return
+      }
+      insertSlashCommand(item.name)
+    },
+    [insertSlashCommand, selectSlashSkill]
   )
   const hasApiKey = !!activeProvider?.apiKey || activeProvider?.requiresApiKey === false
   const needsWorkingFolder = projectScoped && !workingFolder
@@ -1891,24 +1946,24 @@ export function InputArea({
         if (!e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowDown') {
           e.preventDefault()
           setSelectedSlashIndex((prev) =>
-            filteredSlashCommands.length === 0 ? 0 : (prev + 1) % filteredSlashCommands.length
+            filteredSlashSuggestions.length === 0 ? 0 : (prev + 1) % filteredSlashSuggestions.length
           )
           return
         }
         if (!e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowUp') {
           e.preventDefault()
           setSelectedSlashIndex((prev) =>
-            filteredSlashCommands.length === 0
+            filteredSlashSuggestions.length === 0
               ? 0
-              : (prev - 1 + filteredSlashCommands.length) % filteredSlashCommands.length
+              : (prev - 1 + filteredSlashSuggestions.length) % filteredSlashSuggestions.length
           )
           return
         }
         if (!e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'Tab' || e.key === 'Enter')) {
-          const selectedCommand = filteredSlashCommands[selectedSlashIndex]
-          if (selectedCommand) {
+          const selectedSuggestion = filteredSlashSuggestions[selectedSlashIndex]
+          if (selectedSuggestion) {
             e.preventDefault()
-            insertSlashCommand(selectedCommand.name)
+            applySlashSuggestion(selectedSuggestion)
             return
           }
         }
@@ -1938,11 +1993,11 @@ export function InputArea({
       slashMenuOpen,
       fileSearchResults,
       selectedFileSearchIndex,
-      filteredSlashCommands,
+      filteredSlashSuggestions,
       selectedSlashIndex,
       activeFileMention,
       insertSelectedFile,
-      insertSlashCommand,
+      applySlashSuggestion,
       acceptSuggestion,
       applyEditorStateFromSerializedText,
       selectedFiles,
@@ -3019,50 +3074,67 @@ export function InputArea({
                   <div className="composer-flyout-header flex items-center gap-2 px-3 py-2 text-[11px] text-muted-foreground">
                     <Command className="size-3.5" />
                     <span>
-                      {t('input.commandSuggestions', { defaultValue: 'Command suggestions' })}
+                      {t('input.slashSuggestions', {
+                        defaultValue: 'Command & skill suggestions'
+                      })}
                     </span>
                     <span className="composer-status-pill ml-auto rounded-full px-1.5 py-0.5 text-[10px]">
                       /{slashQuery ?? ''}
                     </span>
                   </div>
-                  <div className="max-h-64 overflow-y-auto p-1.5">
-                    {slashCommandsLoading ? (
+                  <div className="max-h-64 overflow-y-auto p-1">
+                    {slashSuggestionsLoading ? (
                       <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
                         <Spinner className="size-3.5" />
                         <span>
-                          {t('input.loadingCommands', { defaultValue: 'Loading commands...' })}
+                          {t('input.loadingSlashSuggestions', {
+                            defaultValue: 'Loading commands and skills...'
+                          })}
                         </span>
                       </div>
-                    ) : filteredSlashCommands.length === 0 ? (
+                    ) : filteredSlashSuggestions.length === 0 ? (
                       <div className="px-2 py-3 text-xs text-muted-foreground">
-                        {t('input.noCommandsFound', { defaultValue: 'No matching commands' })}
+                        {t('input.noSlashSuggestionsFound', {
+                          defaultValue: 'No matching commands or skills'
+                        })}
                       </div>
                     ) : (
-                      filteredSlashCommands.map((command, index) => {
+                      filteredSlashSuggestions.map((item, index) => {
                         const isSelected = index === selectedSlashIndex
                         return (
                           <button
-                            key={command.name}
+                            key={item.key}
                             type="button"
-                            className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
                               isSelected
                                 ? 'bg-accent text-accent-foreground'
                                 : 'hover:bg-muted/50 text-foreground'
                             }`}
                             onMouseDown={(event) => {
                               event.preventDefault()
-                              insertSlashCommand(command.name)
+                              applySlashSuggestion(item)
                             }}
                           >
-                            <Command className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium">/{command.name}</div>
-                              {command.summary && (
-                                <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
-                                  {command.summary}
+                            {item.kind === 'skill' ? (
+                              <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+                            ) : (
+                              <Command className="size-3.5 shrink-0 text-muted-foreground" />
+                            )}
+                            <div className="min-w-0 flex flex-1 items-center gap-2 overflow-hidden">
+                              <div className="max-w-[45%] shrink-0 truncate text-sm font-medium">
+                                {item.kind === 'command' ? `/${item.name}` : item.name}
+                              </div>
+                              {item.summary && (
+                                <div className="truncate text-[11px] text-muted-foreground">
+                                  {item.summary}
                                 </div>
                               )}
                             </div>
+                            <span className="composer-status-pill shrink-0 rounded-full px-1.5 py-0.5 text-[10px]">
+                              {item.kind === 'command'
+                                ? t('skills.commandsLabel')
+                                : t('skills.skillsLabel')}
+                            </span>
                           </button>
                         )
                       })

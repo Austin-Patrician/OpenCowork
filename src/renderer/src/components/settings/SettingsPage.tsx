@@ -92,6 +92,7 @@ import {
   listUsageEvents,
   type UsageTimelineBucket
 } from '@renderer/lib/usage-analytics'
+import { getCacheHitRate } from '@renderer/lib/format-tokens'
 import {
   getLiveOutputCursorClass,
   getLiveOutputDotClass,
@@ -1906,6 +1907,16 @@ function AnalyticsPanel(): React.JSX.Element {
     const cacheRead = Number(row.cache_read_tokens ?? 0)
     return row.request_type === 'openai-responses' ? Math.max(0, input - cacheRead) : input
   }
+  const fmtPercent = (value: number): string =>
+    new Intl.NumberFormat(tokenLocale, {
+      style: 'percent',
+      maximumFractionDigits: 1
+    }).format(Math.max(0, value))
+  const getRowCacheHitRate = (row: Record<string, unknown>): number =>
+    getCacheHitRate(getEffectiveInputTokens(row), Number(row.cache_read_tokens ?? 0))
+  const renderRateValue = (value: number): React.JSX.Element => (
+    <span className="tabular-nums">{fmtPercent(value)}</span>
+  )
   const renderTokenValue = (value: unknown, showRaw = false): React.JSX.Element => {
     const compact = fmtTokenCompact(value)
     const raw = fmtInt(value)
@@ -2101,6 +2112,11 @@ function AnalyticsPanel(): React.JSX.Element {
               render: (row) => renderTokenValue(row.cache_read_tokens)
             },
             {
+              key: 'cache_hit_rate',
+              label: t('analytics.cacheHitRate'),
+              render: (row) => renderRateValue(getRowCacheHitRate(row))
+            },
+            {
               key: 'total_cost_usd',
               label: t('analytics.costUsd'),
               render: (row) => `$${fmtMoney(row.total_cost_usd)}`
@@ -2142,6 +2158,11 @@ function AnalyticsPanel(): React.JSX.Element {
               render: (row) => renderTokenValue(row.cache_read_tokens)
             },
             {
+              key: 'cache_hit_rate',
+              label: t('analytics.cacheHitRate'),
+              render: (row) => renderRateValue(getRowCacheHitRate(row))
+            },
+            {
               key: 'total_cost_usd',
               label: t('analytics.costUsd'),
               render: (row) => `$${fmtMoney(row.total_cost_usd)}`
@@ -2170,6 +2191,11 @@ function AnalyticsPanel(): React.JSX.Element {
               key: 'cache_read_tokens',
               label: t('analytics.cacheReadTokens'),
               render: (row) => renderTokenValue(row.cache_read_tokens)
+            },
+            {
+              key: 'cache_hit_rate',
+              label: t('analytics.cacheHitRate'),
+              render: (row) => renderRateValue(getRowCacheHitRate(row))
             },
             {
               key: 'total_cost_usd',
@@ -2210,6 +2236,11 @@ function AnalyticsPanel(): React.JSX.Element {
               key: 'cache_read_tokens',
               label: t('analytics.cacheReadTokens'),
               render: (row) => renderTokenValue(row.cache_read_tokens)
+            },
+            {
+              key: 'cache_hit_rate',
+              label: t('analytics.cacheHitRate'),
+              render: (row) => renderRateValue(getRowCacheHitRate(row))
             },
             { key: 'ttft_ms', label: t('analytics.ttft'), render: (row) => fmtMs(row.ttft_ms) },
             {

@@ -268,7 +268,7 @@ function buildToolCallRenderState(
 }
 
 function shouldShowToolInMessageList(name: string): boolean {
-  return name !== 'TaskCreate' && name !== 'TaskUpdate'
+  return name !== 'TaskCreate' && name !== 'TaskUpdate' && name !== 'TaskList'
 }
 
 function isWorkspaceCollapsibleTool(name: string): boolean {

@@ -359,6 +359,7 @@
     "outputTokens": "Output Tokens",
     "cacheCreationTokens": "Cache Creation Tokens",
     "cacheReadTokens": "Cache Hit Tokens",
+    "cacheHitRate": "Cache Hit Rate",
     "costUsd": "Cost (USD)",
     "avgTtft": "Avg TTFT",
     "avgTotal": "Avg Total",

@@ -359,6 +359,7 @@
     "outputTokens": "输出 Token",
     "cacheCreationTokens": "缓存创建 Token",
     "cacheReadTokens": "缓存命中 Token",
+    "cacheHitRate": "缓存命中率",
     "costUsd": "消费 (USD)",
     "avgTtft": "平均首 Token",
     "avgTotal": "平均总耗时",
