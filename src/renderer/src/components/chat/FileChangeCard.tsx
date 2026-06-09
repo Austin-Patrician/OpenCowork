@@ -26,6 +26,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Button } from '@renderer/components/ui/button'
 import { confirm } from '@renderer/components/ui/confirm-dialog'
 import { type DiffViewerChunk, type DiffViewerLine } from './CodeDiffViewer'
+import { LazySyntaxHighlighter } from './LazySyntaxHighlighter'
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -143,8 +144,8 @@ function FilePreviewShell({
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className="overflow-hidden rounded-md bg-transparent">
-      <div className="flex min-h-7 items-center justify-between gap-3 px-3 py-1">
+    <div className="overflow-hidden rounded-md bg-background/85 dark:bg-[#111214]">
+      <div className="flex min-h-7 items-center justify-between gap-3 border-b border-border/50 bg-muted/35 px-3 py-1 dark:border-zinc-800/80 dark:bg-[#15171a]">
         <div className="flex min-w-0 items-center gap-2">
           <span
             className="truncate text-[11px] font-medium text-muted-foreground"
@@ -163,7 +164,7 @@ function FilePreviewShell({
         <CompactDiffCopyButton text={copyText} />
       </div>
       <div
-        className="overflow-auto rounded-md bg-transparent"
+        className="overflow-auto rounded-b-md bg-background dark:bg-[#111214]"
         data-tone={tone}
         style={{ maxHeight, fontFamily: MONO_FONT }}
       >
@@ -182,34 +183,28 @@ function CodeFrame({
   filePath: string
   tone: FilePreviewTone
 }): React.JSX.Element {
-  const lines = React.useMemo(() => normalizeLineEndings(content || ' ').split('\n'), [content])
   const lineNumberColor =
     tone === 'create'
       ? 'color-mix(in srgb, #16a34a 72%, var(--muted-foreground) 28%)'
       : 'var(--muted-foreground)'
-  const lineNumberWidth = Math.max(46, String(lines.length).length * 8 + 30)
 
   return (
-    <div
-      className="w-max min-w-full py-2 text-[11px] leading-5"
-      style={{ fontFamily: MONO_FONT }}
-      data-language={detectLang(filePath)}
+    <LazySyntaxHighlighter
+      language={detectLang(filePath)}
+      showLineNumbers
+      customStyle={{
+        margin: 0,
+        padding: '0.5rem',
+        borderRadius: 0,
+        fontSize: '11px',
+        overflow: 'visible',
+        fontFamily: MONO_FONT
+      }}
+      codeTagProps={{ style: { fontFamily: 'inherit' } }}
+      lineNumberStyle={{ color: lineNumberColor, opacity: 0.72, userSelect: 'none' }}
     >
-      {lines.map((line, index) => (
-        <div
-          key={`${index}-${line.length}`}
-          className="grid min-w-full"
-          style={{ gridTemplateColumns: `${lineNumberWidth}px max-content` }}
-        >
-          <span className="select-none px-2 py-0 text-right" style={{ color: lineNumberColor }}>
-            {index + 1}
-          </span>
-          <span className="whitespace-pre px-3 py-0 pr-8 text-foreground/85 dark:text-zinc-200">
-            {line || ' '}
-          </span>
-        </div>
-      ))}
-    </div>
+      {content || ' '}
+    </LazySyntaxHighlighter>
   )
 }
 
@@ -391,6 +386,60 @@ function CompactDiffCopyButton({ text }: { text: string }): React.JSX.Element {
   )
 }
 
+function diffLineBackground(line: DiffLine | undefined): string | undefined {
+  if (line?.type === 'add') return 'rgba(16, 185, 129, 0.14)'
+  if (line?.type === 'del') return 'rgba(239, 68, 68, 0.14)'
+  return undefined
+}
+
+function DiffCodeChunk({
+  lines,
+  filePath
+}: {
+  lines: DiffLine[]
+  filePath: string
+}): React.JSX.Element | null {
+  if (lines.length === 0) return null
+
+  const firstLineNumber = diffDisplayLineNumber(lines[0]) ?? 1
+
+  return (
+    <LazySyntaxHighlighter
+      language={detectLang(filePath)}
+      showLineNumbers
+      wrapLines
+      startingLineNumber={firstLineNumber}
+      lineProps={(lineNumber: number) => {
+        const index = Math.max(0, Math.min(lines.length - 1, lineNumber - firstLineNumber))
+        return {
+          style: {
+            display: 'block',
+            backgroundColor: diffLineBackground(lines[index])
+          }
+        }
+      }}
+      lineNumberStyle={{
+        minWidth: '2.75em',
+        paddingRight: '0.75em',
+        color: 'var(--muted-foreground)',
+        opacity: 0.72,
+        userSelect: 'none'
+      }}
+      customStyle={{
+        margin: 0,
+        padding: '0.5rem 0',
+        borderRadius: 0,
+        fontSize: '11px',
+        overflow: 'visible',
+        fontFamily: MONO_FONT
+      }}
+      codeTagProps={{ style: { fontFamily: 'inherit' } }}
+    >
+      {lines.map((line) => line.text || ' ').join('\n')}
+    </LazySyntaxHighlighter>
+  )
+}
+
 function CompactEditDiff({
   oldStr,
   newStr,
@@ -411,42 +460,6 @@ function CompactEditDiff({
     setExpandedChunks(new Set())
   }, [filePath, oldStr, newStr])
 
-  const renderLine = (line: DiffLine, key: number): React.JSX.Element => {
-    const lineNumber = diffDisplayLineNumber(line)
-
-    return (
-      <div
-        key={key}
-        className={cn(
-          'grid min-w-full bg-transparent text-[11px] leading-5',
-          line.type === 'keep' && 'bg-transparent'
-        )}
-        style={{ gridTemplateColumns: '46px max-content' }}
-      >
-        <span
-          className={cn(
-            'select-none px-2 py-1 text-right',
-            line.type === 'add' && 'text-emerald-600 dark:text-emerald-300',
-            line.type === 'del' && 'text-red-600 dark:text-red-300',
-            line.type === 'keep' && 'text-muted-foreground dark:text-zinc-500'
-          )}
-        >
-          {lineNumber ?? ''}
-        </span>
-        <span
-          className={cn(
-            'whitespace-pre px-3 py-1 pr-8',
-            line.type === 'add' && 'text-emerald-700 dark:text-emerald-100/90',
-            line.type === 'del' && 'text-red-700 dark:text-red-100/90',
-            line.type === 'keep' && 'text-foreground/85 dark:text-zinc-200'
-          )}
-        >
-          {line.text || ' '}
-        </span>
-      </div>
-    )
-  }
-
   return (
     <FilePreviewShell
       filePath={filePath}
@@ -459,14 +472,16 @@ function CompactEditDiff({
       <div className="w-max min-w-full">
         {chunks.map((chunk, ci) => {
           if (chunk.type === 'lines' || expandedChunks.has(ci)) {
-            return chunk.lines.map((line, li) => renderLine(line, ci * 1000 + li))
+            return (
+              <DiffCodeChunk key={`compact-code-${ci}`} lines={chunk.lines} filePath={filePath} />
+            )
           }
 
           return (
             <button
               key={`compact-inline-collapsed-${ci}`}
               type="button"
-              className="flex min-w-full items-center justify-center bg-transparent px-3 py-2 text-[10px] text-muted-foreground transition-colors hover:bg-white/50 hover:text-foreground dark:text-zinc-500 dark:hover:bg-white/[0.04] dark:hover:text-zinc-200"
+              className="flex min-w-full items-center justify-center bg-muted/40 px-3 py-2 text-[10px] text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground dark:bg-[#15171a]/70 dark:text-zinc-500 dark:hover:bg-[#1a1d21] dark:hover:text-zinc-200"
               onClick={() => setExpandedChunks((prev) => new Set([...prev, ci]))}
             >
               {t('toolCall.unchangedLines', {
@@ -805,10 +820,12 @@ function NewFileContent({
 function SnapshotSummaryNotice({
   before,
   after,
+  filePath,
   children
 }: {
   before?: AgentRunFileChange['before']
   after: AgentRunFileChange['after']
+  filePath?: string
   children?: React.ReactNode
 }): React.JSX.Element {
   const details = [
@@ -833,14 +850,23 @@ function SnapshotSummaryNotice({
       </div>
       {children}
       {after.previewText && (
-        <pre
-          className="overflow-auto whitespace-pre-wrap break-words rounded-md bg-transparent px-2.5 py-2 text-[11px] text-foreground/85 dark:text-zinc-200"
-          style={{ fontFamily: MONO_FONT, maxHeight: '180px' }}
+        <LazySyntaxHighlighter
+          language={detectLang(filePath ?? '')}
+          showLineNumbers
+          wrapLongLines
+          customStyle={{
+            margin: 0,
+            padding: '0.5rem',
+            borderRadius: '0.375rem',
+            fontSize: '11px',
+            maxHeight: '180px',
+            overflow: 'auto',
+            fontFamily: MONO_FONT
+          }}
+          codeTagProps={{ style: { fontFamily: 'inherit' } }}
         >
-          {after.previewText}
-          {after.tailPreviewText ? '\n…\n' : ''}
-          {after.tailPreviewText ?? ''}
-        </pre>
+          {`${after.previewText}${after.tailPreviewText ? '\n…\n' : ''}${after.tailPreviewText ?? ''}`}
+        </LazySyntaxHighlighter>
       )}
     </div>
   )
@@ -972,7 +998,7 @@ function TrackedEditDiff({
 
   if (isLoading && !content) {
     return (
-      <SnapshotSummaryNotice before={change.before} after={change.after}>
+      <SnapshotSummaryNotice before={change.before} after={change.after} filePath={filePath}>
         <div className="flex items-center gap-2">
           <Loader2 className="size-3.5 animate-spin" />
           <span>{t('thinking.thinkingEllipsis')}</span>
@@ -983,14 +1009,14 @@ function TrackedEditDiff({
 
   if (loadError && !content) {
     return (
-      <SnapshotSummaryNotice before={change.before} after={change.after}>
+      <SnapshotSummaryNotice before={change.before} after={change.after} filePath={filePath}>
         <div className="text-destructive/80">{loadError}</div>
       </SnapshotSummaryNotice>
     )
   }
 
   if (!content) {
-    return <SnapshotSummaryNotice before={change.before} after={change.after} />
+    return <SnapshotSummaryNotice before={change.before} after={change.after} filePath={filePath} />
   }
 
   return (
@@ -1515,7 +1541,11 @@ export function FileChangeCard({
               />
             )}
             {showTrackedWriteSnapshotSummary && trackedChange && (
-              <SnapshotSummaryNotice before={trackedChange.before} after={trackedChange.after} />
+              <SnapshotSummaryNotice
+                before={trackedChange.before}
+                after={trackedChange.after}
+                filePath={filePath}
+              />
             )}
             {showTrackedWriteNewFile && trackedChange && (
               <NewFileContent
@@ -1525,7 +1555,7 @@ export function FileChangeCard({
               />
             )}
             {showTrackedWriteNewFileSummary && trackedChange && (
-              <SnapshotSummaryNotice after={trackedChange.after} />
+              <SnapshotSummaryNotice after={trackedChange.after} filePath={filePath} />
             )}
             {showPendingWriteStreaming && (
               <PendingWritePreview

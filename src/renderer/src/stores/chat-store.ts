@@ -3271,9 +3271,9 @@ export const useChatStore = create<ChatStore>()(
     sanitizeToolErrorsForResend: (sessionId) => {
       const session = get().sessions.find((s) => s.id === sessionId)
       if (!session || session.messages.length === 0) return
-      const sanitized = sanitizeToolBlocksForResend(session.messages)
-      if (!sanitized.changed) return
-      get().replaceSessionMessages(sessionId, sanitized.messages)
+      const trimmed = stripTrailingAssistantAgentErrors(session.messages)
+      if (!trimmed.changed) return
+      get().replaceSessionMessages(sessionId, trimmed.messages)
     },
 
     stripOldSystemReminders: (sessionId) => {

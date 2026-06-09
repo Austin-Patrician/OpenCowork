@@ -320,7 +320,8 @@ export function mergeCompressedMessagesIntoConversation(
  */
 export function mergeCompressedMessagesKeepHistory(
   currentMessages: UnifiedMessage[],
-  compressedMessages?: UnifiedMessage[] | null
+  compressedMessages?: UnifiedMessage[] | null,
+  options: { fallbackInsertBeforeIds?: readonly string[] } = {}
 ): UnifiedMessage[] | null {
   if (!compressedMessages || compressedMessages.length === 0) {
     return null
@@ -366,6 +367,13 @@ export function mergeCompressedMessagesKeepHistory(
         insertIndex = currentMessages.findIndex((message) => message.id === candidateId)
         if (insertIndex >= 0) break
       }
+    }
+  }
+  if (insertIndex < 0) {
+    for (const fallbackId of options.fallbackInsertBeforeIds ?? []) {
+      if (!fallbackId) continue
+      insertIndex = currentMessages.findIndex((message) => message.id === fallbackId)
+      if (insertIndex >= 0) break
     }
   }
   if (insertIndex < 0) {

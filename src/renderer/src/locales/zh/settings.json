@@ -285,7 +285,16 @@
       "customPlaceholderPosix": "/opt/homebrew/bin/zsh",
       "customPlaceholderWindows": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
       "resolvedShell": "当前解析：{{shell}}",
-      "resolvedAuto": "当前解析：自动，将在执行时选择"
+      "resolvedAuto": "当前解析：自动，将在执行时选择",
+      "environment": {
+        "title": "Shell 环境变量",
+        "desc": "管理注入到新建本地 shell 会话中的额外环境变量。",
+        "placeholder": "FOO=bar\nPATH=/tmp/test-bin:$PATH\n# export HELLO=world",
+        "formatHint": "一行一个变量。支持 KEY=VALUE 或 export KEY=VALUE。",
+        "precedenceHint": "当变量名冲突时，OpenCoWork 配置值会覆盖当前进程环境变量。",
+        "newSessionHint": "仅影响新建的本地 shell 会话、后台进程和终端标签页。",
+        "validationError": "第 {{line}} 行格式无效，未保存。请使用 KEY=VALUE 或 export KEY=VALUE。"
+      }
     }
   },
   "memory": {

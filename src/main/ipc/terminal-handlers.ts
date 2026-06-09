@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { accessSync, constants, statSync } from 'fs'
 import { safeSendToWindow } from '../window-ipc'
 import { spawn, type IPty } from 'node-pty'
+import { readShellEnvironmentVariablesText } from './settings-handlers'
 
 interface TerminalSession {
   id: string
@@ -213,6 +214,88 @@ function getLaunchArgs(launch: ResolvedShellLaunch, command?: string): string[] 
     : getPosixCommandArgs(launch, command)
 }
 
+const SHELL_ENVIRONMENT_VARIABLE_LINE_RE = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/
+const POSIX_ENVIRONMENT_REFERENCE_RE =
+  /\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})/g
+const WINDOWS_ENVIRONMENT_REFERENCE_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g
+
+function normalizeEnvironmentVariableKey(key: string): string {
+  return process.platform === 'win32' ? key.toLowerCase() : key
+}
+
+function readEnvironmentVariable(env: NodeJS.ProcessEnv, key: string): string {
+  const directValue = env[key]
+  if (typeof directValue === 'string') return directValue
+  if (process.platform !== 'win32') return ''
+
+  const normalizedKey = normalizeEnvironmentVariableKey(key)
+  for (const [candidateKey, candidateValue] of Object.entries(env)) {
+    if (normalizeEnvironmentVariableKey(candidateKey) !== normalizedKey) continue
+    return typeof candidateValue === 'string' ? candidateValue : ''
+  }
+
+  return ''
+}
+
+function writeEnvironmentVariable(env: NodeJS.ProcessEnv, key: string, value: string): void {
+  if (process.platform === 'win32') {
+    const normalizedKey = normalizeEnvironmentVariableKey(key)
+    for (const candidateKey of Object.keys(env)) {
+      if (candidateKey === key) continue
+      if (normalizeEnvironmentVariableKey(candidateKey) !== normalizedKey) continue
+      delete env[candidateKey]
+    }
+  }
+
+  env[key] = value
+}
+
+function expandEnvironmentVariableReferences(value: string, env: NodeJS.ProcessEnv): string {
+  return value
+    .replace(WINDOWS_ENVIRONMENT_REFERENCE_RE, (_match, key: string) => {
+      return readEnvironmentVariable(env, key)
+    })
+    .replace(POSIX_ENVIRONMENT_REFERENCE_RE, (_match, shortKey: string, bracedKey: string) => {
+      return readEnvironmentVariable(env, shortKey || bracedKey)
+    })
+}
+
+function buildTerminalEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  const configuredText = readShellEnvironmentVariablesText()
+  let hasConfiguredTerm = false
+
+  if (configuredText.trim()) {
+    const lines = configuredText.split(/\r?\n/)
+
+    lines.forEach((rawLine, index) => {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('#')) return
+
+      const match = line.match(SHELL_ENVIRONMENT_VARIABLE_LINE_RE)
+      if (!match) {
+        console.warn(
+          `[Terminal] Ignoring invalid shell environment variable config at line ${index + 1}`
+        )
+        return
+      }
+
+      const [, key, rawValue] = match
+      const expandedValue = expandEnvironmentVariableReferences(rawValue, env)
+      writeEnvironmentVariable(env, key, expandedValue)
+      if (normalizeEnvironmentVariableKey(key) === normalizeEnvironmentVariableKey('TERM')) {
+        hasConfiguredTerm = true
+      }
+    })
+  }
+
+  if (!hasConfiguredTerm) {
+    writeEnvironmentVariable(env, 'TERM', 'xterm-256color')
+  }
+
+  return env
+}
+
 export async function createTerminalSession(
   args: CreateTerminalSessionArgs,
   sender?: WebContents | null
@@ -225,6 +308,7 @@ export async function createTerminalSession(
   const id = `term-${randomUUID()}`
   let lastError = 'Unknown error'
   const ownerWindowId = resolveOwnerWindowId(sender)
+  const env = buildTerminalEnvironment()
 
   for (const launch of launches) {
     try {
@@ -234,10 +318,7 @@ export async function createTerminalSession(
         cols,
         rows,
         cwd,
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color'
-        }
+        env
       })
 
       const session: TerminalSession = {

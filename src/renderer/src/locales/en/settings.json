@@ -285,7 +285,16 @@
       "customPlaceholderPosix": "/opt/homebrew/bin/zsh",
       "customPlaceholderWindows": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
       "resolvedShell": "Resolved shell: {{shell}}",
-      "resolvedAuto": "Resolved shell: Auto, selected at runtime"
+      "resolvedAuto": "Resolved shell: Auto, selected at runtime",
+      "environment": {
+        "title": "Shell environment variables",
+        "desc": "Manage extra environment variables injected into new local shell sessions.",
+        "placeholder": "FOO=bar\nPATH=/tmp/test-bin:$PATH\n# export HELLO=world",
+        "formatHint": "One variable per line. Supported formats: KEY=VALUE or export KEY=VALUE.",
+        "precedenceHint": "OpenCowork values override the current process environment when names collide.",
+        "newSessionHint": "Only affects newly created local shell sessions, background processes, and terminal tabs.",
+        "validationError": "Line {{line}} is invalid and was not saved. Use KEY=VALUE or export KEY=VALUE."
+      }
     }
   },
   "memory": {

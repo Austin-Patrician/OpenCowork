@@ -3284,8 +3284,9 @@ export function useChatActions(): {
           }
         }
 
-        // After a manual abort, stale errored/orphaned tool blocks can remain at tail
-        // and break the next request. Clean them before appending new user input.
+        // After a manual abort, stale tail error blocks can break the next request.
+        // Tool replay consistency is sanitized later for the request payload only,
+        // so visible history is not rewritten when starting a new turn.
         chatStore.sanitizeToolErrorsForResend(sessionId)
 
         baseProviderConfig.sessionId = sessionId
@@ -5023,7 +5024,9 @@ export function useChatActions(): {
                     // Keep the full prior transcript visible; insert boundary + summary at
                     // the preserved-segment head rather than dropping the older messages.
                     const merged = compressedMessages
-                      ? mergeCompressedMessagesKeepHistory(currentMessages, compressedMessages)
+                      ? mergeCompressedMessagesKeepHistory(currentMessages, compressedMessages, {
+                          fallbackInsertBeforeIds: [assistantMsgId]
+                        })
                       : null
                     if (!merged) {
                       // Nothing to merge — at least clear the placeholder so the loader
@@ -5036,46 +5039,9 @@ export function useChatActions(): {
                     // The merge always returns a freshly-constructed array, but Zustand's
                     // immer middleware auto-freezes state. Take a copy before in-place
                     // mutation to keep this defensive against future merge changes.
-                    const nextMessages = [...merged]
-
-                    // Promote the placeholder to the persistent "compressed" marker in-place.
-                    if (placeholderId) {
-                      const placeholderIndex = nextMessages.findIndex(
-                        (item) => item.id === placeholderId
-                      )
-                      if (placeholderIndex >= 0) {
-                        const placeholder = nextMessages[placeholderIndex]
-                        const startedAt =
-                          placeholder.meta?.compressionStatus?.startedAt ?? placeholder.createdAt
-                        const boundaryMeta = compressedMessages?.find(
-                          (item) => item.role === 'system' && item.meta?.compactBoundary
-                        )?.meta?.compactBoundary
-                        nextMessages[placeholderIndex] = {
-                          ...placeholder,
-                          meta: {
-                            ...placeholder.meta,
-                            compressionStatus: {
-                              state: 'compressed',
-                              startedAt,
-                              completedAt: Date.now(),
-                              ...(typeof event.keptMessageCount === 'number' &&
-                              event.keptMessageCount > 0
-                                ? { keptMessageCount: event.keptMessageCount }
-                                : boundaryMeta?.messagesSummarized
-                                  ? { keptMessageCount: boundaryMeta.messagesSummarized }
-                                  : {}),
-                              ...(typeof boundaryMeta?.preTokens === 'number' &&
-                              boundaryMeta.preTokens > 0
-                                ? { preTokens: boundaryMeta.preTokens }
-                                : {}),
-                              ...(typeof event.newCount === 'number' && event.newCount > 0
-                                ? { newCount: event.newCount }
-                                : {})
-                            }
-                          }
-                        }
-                      }
-                    }
+                    const nextMessages = placeholderId
+                      ? merged.filter((message) => message.id !== placeholderId)
+                      : [...merged]
 
                     if (!hasSameMessageIdSequence(currentMessages, nextMessages)) {
                       chatStore.replaceSessionMessages(sessionId!, nextMessages)
@@ -5652,34 +5618,9 @@ export function useChatActions(): {
       const currentMessages =
         useChatStore.getState().sessions.find((item) => item.id === sessionId)?.messages ?? []
       const merged = mergeCompressedMessagesKeepHistory(currentMessages, compressed)
-      const nextMessages = merged ? [...merged] : [...compressed]
-      const placeholderIndex = nextMessages.findIndex((item) => item.id === placeholderId)
-      if (placeholderIndex >= 0) {
-        const placeholder = nextMessages[placeholderIndex]
-        const boundaryMeta = compressed.find(
-          (item) => item.role === 'system' && item.meta?.compactBoundary
-        )?.meta?.compactBoundary
-        nextMessages[placeholderIndex] = {
-          ...placeholder,
-          meta: {
-            ...placeholder.meta,
-            compressionStatus: {
-              state: 'compressed',
-              startedAt: placeholderStartedAt,
-              completedAt: Date.now(),
-              ...(typeof result.messagesSummarized === 'number' && result.messagesSummarized > 0
-                ? { keptMessageCount: result.messagesSummarized }
-                : boundaryMeta?.messagesSummarized
-                  ? { keptMessageCount: boundaryMeta.messagesSummarized }
-                  : {}),
-              ...(typeof boundaryMeta?.preTokens === 'number' && boundaryMeta.preTokens > 0
-                ? { preTokens: boundaryMeta.preTokens }
-                : {}),
-              newCount: result.newCount
-            }
-          }
-        }
-      }
+      const nextMessages = (merged ? [...merged] : [...compressed]).filter(
+        (message) => message.id !== placeholderId
+      )
       chatStore.replaceSessionMessages(sessionId, nextMessages)
       return 'compressed'
     } catch (err) {

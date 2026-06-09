@@ -1751,18 +1751,16 @@ function detectLang(filePath: string): string {
   return map[ext] ?? 'text'
 }
 
-function visualizeWhitespace(text: string): string {
-  return text.replace(/\t/g, '→\t').replace(/ /g, '·')
-}
-
 function EditPayloadPane({
   label,
   value,
+  language,
   tone = 'default',
   truncated
 }: {
   label: string
   value: string
+  language?: string
   tone?: 'default' | 'old' | 'new'
   truncated?: boolean
 }): React.JSX.Element {
@@ -1797,12 +1795,22 @@ function EditPayloadPane({
         )}
         <CopyBtn text={value} />
       </div>
-      <pre
-        className="max-h-48 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 text-[11px] text-foreground/80 dark:text-zinc-300/80"
-        style={{ fontFamily: MONO_FONT }}
+      <LazySyntaxHighlighter
+        language={language}
+        showLineNumbers
+        customStyle={{
+          margin: 0,
+          padding: '0.5rem',
+          borderRadius: 0,
+          fontSize: '11px',
+          maxHeight: '12rem',
+          overflow: 'auto',
+          fontFamily: MONO_FONT
+        }}
+        codeTagProps={{ style: { fontFamily: 'inherit' } }}
       >
-        {visualizeWhitespace(value)}
-      </pre>
+        {value}
+      </LazySyntaxHighlighter>
     </div>
   )
 }
@@ -2258,6 +2266,7 @@ function StructuredInput({
               <EditPayloadPane
                 label="old_string"
                 value={visibleOld}
+                language={detectLang(filePath)}
                 tone="old"
                 truncated={oldTruncated}
               />
@@ -2266,6 +2275,7 @@ function StructuredInput({
               <EditPayloadPane
                 label="new_string"
                 value={visibleNew}
+                language={detectLang(filePath)}
                 tone="new"
                 truncated={newTruncated}
               />

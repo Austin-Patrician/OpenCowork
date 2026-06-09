@@ -253,6 +253,7 @@ interface SettingsStore {
   fileDiffViewMode: FileDiffViewMode
   shellExecutionEndpoint: ShellExecutionEndpoint
   customShellExecutable: string
+  shellEnvironmentVariablesText: string
   userName: string
   userAvatar: string
   conversationGuideSeen: boolean
@@ -362,6 +363,7 @@ export const useSettingsStore = create<SettingsStore>()(
       fileDiffViewMode: 'split',
       shellExecutionEndpoint: DEFAULT_SHELL_EXECUTION_ENDPOINT,
       customShellExecutable: '',
+      shellEnvironmentVariablesText: '',
       userName: '',
       userAvatar: '',
       conversationGuideSeen: false,
@@ -441,7 +443,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'opencowork-settings',
-      version: 22,
+      version: 23,
       storage: createJSONStorage(() => ipcStorage),
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>
@@ -607,6 +609,9 @@ export const useSettingsStore = create<SettingsStore>()(
         if (typeof state.customShellExecutable !== 'string') {
           state.customShellExecutable = ''
         }
+        if (typeof state.shellEnvironmentVariablesText !== 'string') {
+          state.shellEnvironmentVariablesText = ''
+        }
         if (state.conversationGuideSeen === undefined) {
           state.conversationGuideSeen = false
         }
@@ -698,6 +703,7 @@ export const useSettingsStore = create<SettingsStore>()(
         fileDiffViewMode: state.fileDiffViewMode,
         shellExecutionEndpoint: normalizeShellExecutionEndpoint(state.shellExecutionEndpoint),
         customShellExecutable: state.customShellExecutable,
+        shellEnvironmentVariablesText: state.shellEnvironmentVariablesText,
         userName: state.userName,
         userAvatar: state.userAvatar,
         conversationGuideSeen: state.conversationGuideSeen,

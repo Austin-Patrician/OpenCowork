@@ -20,8 +20,6 @@ All notable changes to this project will be documented in this file.
 
 - Fixed unsafe fast-model routing for complex, high-risk, tool-required, or workspace-aware requests by forcing main-model routing when policy gates require it.
 
-## [0.9.114] - 2026-06-05
-
 ### Added
 
 - Added Runtime Status Panel with Git integration: branch info, ahead/behind status, changed file count, and diff line summaries for the working directory.

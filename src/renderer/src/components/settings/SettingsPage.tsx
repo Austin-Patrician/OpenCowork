@@ -293,6 +293,22 @@ interface ShellEndpointOption {
   descKey: string
 }
 
+const SHELL_ENVIRONMENT_VARIABLE_LINE_RE = /^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=.*$/
+
+function getInvalidShellEnvironmentVariablesLine(text: string): number | null {
+  const lines = text.split(/\r?\n/)
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? ''
+    if (!line || line.startsWith('#')) continue
+    if (!SHELL_ENVIRONMENT_VARIABLE_LINE_RE.test(line)) {
+      return index + 1
+    }
+  }
+
+  return null
+}
+
 function getShellEndpointOptions(platform: string): ShellEndpointOption[] {
   const normalizedPlatform = platform.toLowerCase()
   const base: ShellEndpointOption[] = [
@@ -1357,6 +1373,7 @@ function GeneralPanel(): React.JSX.Element {
               sshTerminalThemePreset: DEFAULT_SSH_TERMINAL_THEME_PRESET,
               shellExecutionEndpoint: DEFAULT_SHELL_EXECUTION_ENDPOINT,
               customShellExecutable: '',
+              shellEnvironmentVariablesText: '',
               backgroundColor: '',
               fontFamily: '',
               fontSize: 16,
@@ -1382,6 +1399,30 @@ function SystemPanel(): React.JSX.Element {
   const { t } = useTranslation('settings')
   const settings = useSettingsStore()
   const platform = window.electron.process.platform
+  const [shellEnvironmentVariablesDraft, setShellEnvironmentVariablesDraft] = useState(
+    settings.shellEnvironmentVariablesText
+  )
+  const invalidShellEnvironmentVariablesLine = useMemo(
+    () => getInvalidShellEnvironmentVariablesLine(shellEnvironmentVariablesDraft),
+    [shellEnvironmentVariablesDraft]
+  )
+  const handleShellEnvironmentVariablesChange = useCallback(
+    (value: string) => {
+      setShellEnvironmentVariablesDraft(value)
+      if (getInvalidShellEnvironmentVariablesLine(value) === null) {
+        settings.updateSettings({ shellEnvironmentVariablesText: value })
+      }
+    },
+    [settings]
+  )
+
+  useEffect(() => {
+    if (useSettingsStore.persist.hasHydrated()) return
+
+    return useSettingsStore.persist.onFinishHydration(() => {
+      setShellEnvironmentVariablesDraft(useSettingsStore.getState().shellEnvironmentVariablesText)
+    })
+  }, [])
   const shellOptions = getShellEndpointOptions(platform)
   const activeShellOption =
     shellOptions.find((option) => option.value === settings.shellExecutionEndpoint) ??
@@ -1460,6 +1501,42 @@ function SystemPanel(): React.JSX.Element {
             ? t('system.shell.resolvedShell', { shell: resolvedShell })
             : t('system.shell.resolvedAuto')}
         </p>
+
+        <div className="space-y-2 rounded-lg border border-border/60 bg-background/60 p-3">
+          <div>
+            <label className="text-xs font-medium">{t('system.shell.environment.title')}</label>
+            <p className="text-xs text-muted-foreground">{t('system.shell.environment.desc')}</p>
+          </div>
+          <Textarea
+            value={shellEnvironmentVariablesDraft}
+            onChange={(event) => handleShellEnvironmentVariablesChange(event.target.value)}
+            placeholder={t('system.shell.environment.placeholder')}
+            rows={8}
+            className={`max-w-lg font-mono text-xs leading-5 ${
+              invalidShellEnvironmentVariablesLine !== null
+                ? 'border-destructive focus-visible:ring-destructive'
+                : ''
+            }`}
+          />
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              {t('system.shell.environment.formatHint')}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('system.shell.environment.precedenceHint')}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('system.shell.environment.newSessionHint')}
+            </p>
+            {invalidShellEnvironmentVariablesLine !== null ? (
+              <p className="text-xs text-destructive">
+                {t('system.shell.environment.validationError', {
+                  line: invalidShellEnvironmentVariablesLine
+                })}
+              </p>
+            ) : null}
+          </div>
+        </div>
       </section>
 
       <section className="space-y-3">

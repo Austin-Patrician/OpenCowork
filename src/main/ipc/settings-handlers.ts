@@ -32,6 +32,38 @@ export function readSettings(): Record<string, unknown> {
   return settingsCache
 }
 
+export function decodePersistedStoreState<T>(raw: unknown): T | null {
+  if (raw == null) return null
+
+  let parsed = raw
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      return null
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') return null
+  if ('state' in (parsed as Record<string, unknown>)) {
+    return ((parsed as Record<string, unknown>).state as T) ?? null
+  }
+
+  return parsed as T
+}
+
+export function readPersistedSettingsState(): Record<string, unknown> {
+  const root = readSettings()
+  return decodePersistedStoreState<Record<string, unknown>>(root['opencowork-settings']) ?? {}
+}
+
+export function readShellEnvironmentVariablesText(): string {
+  const persistedSettings = readPersistedSettingsState()
+  return typeof persistedSettings.shellEnvironmentVariablesText === 'string'
+    ? persistedSettings.shellEnvironmentVariablesText
+    : ''
+}
+
 function flushSettingsToDisk(): void {
   if (!dirty || !settingsCache) return
   try {

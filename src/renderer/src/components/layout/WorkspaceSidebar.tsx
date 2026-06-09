@@ -2,21 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import packageJson from '../../../../../package.json'
 import { useTranslation } from 'react-i18next'
-import readmeZh from '../../../../../README.zh.md?raw'
 import {
   BookOpen,
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  CircleHelp,
+  CloudSync,
   Copy,
   Download,
   Eraser,
+  ExternalLink,
   FileText,
   FolderInput,
   FolderOpen,
   GitBranch,
-  History,
   Image,
   Loader2,
   MessageSquare,
@@ -33,8 +32,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
-  Wand2,
-  ExternalLink
+  Wand2
 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -342,6 +340,7 @@ export function WorkspaceSidebar(): React.JSX.Element {
   const settingsPageOpen = useUIStore((state) => state.settingsPageOpen)
   const skillsPageOpen = useUIStore((state) => state.skillsPageOpen)
   const soulsPageOpen = useUIStore((state) => state.soulsPageOpen)
+  const syncPageOpen = useUIStore((state) => state.syncPageOpen)
   const resourcesPageOpen = useUIStore((state) => state.resourcesPageOpen)
   const drawPageOpen = useUIStore((state) => state.drawPageOpen)
   const translatePageOpen = useUIStore((state) => state.translatePageOpen)
@@ -476,11 +475,13 @@ export function WorkspaceSidebar(): React.JSX.Element {
     !settingsPageOpen &&
     !skillsPageOpen &&
     !soulsPageOpen &&
+    !syncPageOpen &&
     !resourcesPageOpen &&
     !drawPageOpen &&
     !translatePageOpen &&
     !tasksPageOpen
-  const featureMenuActive = resourcesPageOpen || skillsPageOpen || soulsPageOpen || drawPageOpen
+  const featureMenuActive =
+    resourcesPageOpen || skillsPageOpen || soulsPageOpen || syncPageOpen || drawPageOpen
   const sessionsByProject = useMemo(() => {
     const next = new Map<string, SessionListItem[]>()
     for (const session of sessions) {
@@ -688,14 +689,6 @@ export function WorkspaceSidebar(): React.JSX.Element {
     },
     [openProjectHome]
   )
-
-  const handleOpenDocs = useCallback(() => {
-    useUIStore.getState().openMarkdownPreview(t('sidebar.docsTitle'), readmeZh)
-  }, [t])
-
-  const handleOpenChangelog = useCallback(() => {
-    useUIStore.getState().setChangelogDialogOpen(true)
-  }, [])
 
   const handleClearChatSessions = useCallback(async () => {
     const chatSessionIds = useChatStore
@@ -1260,6 +1253,18 @@ export function WorkspaceSidebar(): React.JSX.Element {
                   >
                     <Sparkles className="size-3.5 shrink-0" />
                     <span className="truncate">{t('navRail.souls')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => useUIStore.getState().openSyncPage()}
+                    className={cn(
+                      'flex h-7 w-full items-center gap-2 px-2 text-[12px] font-medium transition-colors',
+                      SIDEBAR_TREE_ROW_CLASS,
+                      syncPageOpen ? SIDEBAR_TREE_ACTIVE_CLASS : SIDEBAR_TREE_SUBITEM_HOVER_CLASS
+                    )}
+                  >
+                    <CloudSync className="size-3.5 shrink-0" />
+                    <span className="truncate">{t('navRail.sync')}</span>
                   </button>
                   <button
                     type="button"
@@ -1830,43 +1835,23 @@ export function WorkspaceSidebar(): React.JSX.Element {
           </div>
         </div>
         <div className="mt-auto px-2 pb-2 pt-1.5">
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-7 shrink-0 rounded-full">
-                  <CircleHelp className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="start" className="w-44">
-                <DropdownMenuItem onSelect={() => deferDropdownAction(handleOpenDocs)}>
-                  <BookOpen className="size-4" />
-                  {t('sidebar.docsTitle')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => deferDropdownAction(handleOpenChangelog)}>
-                  <History className="size-4" />
-                  {t('sidebar.changelogTitle')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Button
-              variant="ghost"
-              className={cn(
-                'h-8 flex-1 justify-between gap-2 px-2 text-[12px]',
-                SIDEBAR_TREE_ROW_CLASS,
-                SIDEBAR_TREE_HOVER_CLASS
-              )}
-              onClick={() => useUIStore.getState().openSettingsPage('general')}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Settings className="size-4 shrink-0" />
-                <span className="truncate">{t('sidebar.systemSettings')}</span>
-              </span>
-              <span className="shrink-0 text-[10px] text-muted-foreground/80">
-                v{packageJson.version}
-              </span>
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            className={cn(
+              'h-8 w-full justify-between gap-2 px-2 text-[12px]',
+              SIDEBAR_TREE_ROW_CLASS,
+              SIDEBAR_TREE_HOVER_CLASS
+            )}
+            onClick={() => useUIStore.getState().openSettingsPage('general')}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Settings className="size-4 shrink-0" />
+              <span className="truncate">{t('sidebar.systemSettings')}</span>
+            </span>
+            <span className="shrink-0 text-[10px] text-muted-foreground/80">
+              v{packageJson.version}
+            </span>
+          </Button>
         </div>
 
         <input
