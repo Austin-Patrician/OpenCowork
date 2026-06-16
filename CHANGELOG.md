@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.117] - 2026-06-16
+
+### Added
+
+- Added `mimo-v2.5-pro-ultraspeed` model (MiMo V2.5 Pro UltraSpeed) to Routin AI and Xiaomi provider presets with 1M context, 131K max output, tool calling, and deep thinking support.
+- Registered `mimo-v2.5-pro-ultraspeed` in the Routin AI plan preset for plan subscribers.
+
 ## [0.9.116] - 2026-06-09
 
 ### Added
