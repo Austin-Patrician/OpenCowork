@@ -1533,7 +1533,6 @@ const ROUTIN_AI_PLAN_MODEL_ORDER = [
   'gpt-5.4-mini',
   'gpt-5.4',
   'gpt-5.5',
-  'mimo-v2.5-pro-ultraspeed',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-opus-4-6',
