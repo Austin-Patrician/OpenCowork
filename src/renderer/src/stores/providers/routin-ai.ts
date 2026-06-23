@@ -1152,6 +1152,60 @@ export const routinAiPreset: BuiltinProviderPreset = {
       }
     },
     {
+      id: 'doubao-seed-evolving',
+      name: 'Doubao Seed Evolving',
+      icon: 'doubao',
+      enabled: true,
+      supportsVision: true,
+      supportsFunctionCall: true,
+      contextLength: 256_000,
+      inputPrice: 3.2,
+      outputPrice: 16,
+      cacheHitPrice: 0.64,
+      supportsThinking: true,
+      thinkingConfig: {
+        bodyParams: {},
+        reasoningEffortLevels: ['minimal', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium'
+      }
+    },
+    {
+      id: 'doubao-seed-2-1-pro-260628',
+      name: 'Doubao Seed 2.1 Pro (260628)',
+      icon: 'doubao',
+      enabled: true,
+      supportsVision: true,
+      supportsFunctionCall: true,
+      contextLength: 256_000,
+      inputPrice: 3.2,
+      outputPrice: 16,
+      cacheHitPrice: 0.64,
+      supportsThinking: true,
+      thinkingConfig: {
+        bodyParams: {},
+        reasoningEffortLevels: ['minimal', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium'
+      }
+    },
+    {
+      id: 'doubao-seed-2-1-turbo-260628',
+      name: 'Doubao Seed 2.1 Turbo (260628)',
+      icon: 'doubao',
+      enabled: true,
+      supportsVision: true,
+      supportsFunctionCall: true,
+      contextLength: 256_000,
+      inputPrice: 0.6,
+      outputPrice: 3.6,
+      cacheHitPrice: 0.12,
+      supportsThinking: true,
+      thinkingConfig: {
+        bodyParams: {},
+        reasoningEffortLevels: ['minimal', 'low', 'medium', 'high'],
+        defaultReasoningEffort: 'medium'
+      }
+    },
+    {
       id: 'doubao-seedream-4-5-251128',
       name: 'Doubao Seedream 4.5 (251128)',
       icon: 'doubao',

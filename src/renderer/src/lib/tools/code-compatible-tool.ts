@@ -116,7 +116,7 @@ const toolSearchHandler: ToolHandler = {
       typeof input.limit === 'number' && Number.isFinite(input.limit)
         ? Math.max(1, Math.min(Math.floor(input.limit), 50))
         : 20
-    const allMatches = toolRegistry.getDefinitions().filter((definition) => {
+    const allMatches = toolRegistry.getStableDefinitions().filter((definition) => {
       if (!query) return true
       return (
         definition.name.toLowerCase().includes(query) ||

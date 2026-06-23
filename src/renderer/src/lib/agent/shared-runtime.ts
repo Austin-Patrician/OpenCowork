@@ -407,6 +407,13 @@ export function mergeTokenUsage(target: TokenUsage, usage: TokenUsage): void {
   if (usage.cacheReadTokens) {
     target.cacheReadTokens = (target.cacheReadTokens ?? 0) + usage.cacheReadTokens
   }
+  const cacheReadRatio =
+    target.inputTokens > 0 ? Math.max(0, target.cacheReadTokens ?? 0) / target.inputTokens : undefined
+  if (cacheReadRatio !== undefined) {
+    target.cacheReadRatio = cacheReadRatio
+  } else {
+    delete target.cacheReadRatio
+  }
   if (usage.reasoningTokens) {
     target.reasoningTokens = (target.reasoningTokens ?? 0) + usage.reasoningTokens
   }

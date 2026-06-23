@@ -125,7 +125,7 @@ function computeCosts(
   cacheHitCostUsd: number | null
   totalCostUsd: number | null
 } {
-  const billableInput = usage.billableInputTokens ?? usage.inputTokens
+  const billableInput = getBillableInputTokens(usage, modelConfig?.type)
   const inputPrice = toNullableNumber(modelConfig?.inputPrice)
   const outputPrice = toNullableNumber(modelConfig?.outputPrice)
   const cacheHitPrice = toNullableNumber(modelConfig?.cacheHitPrice)

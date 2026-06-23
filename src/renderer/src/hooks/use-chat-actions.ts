@@ -16,6 +16,12 @@ import { useUIStore } from '@renderer/stores/ui-store'
 import { useSshStore } from '@renderer/stores/ssh-store'
 import { toolRegistry } from '@renderer/lib/agent/tool-registry'
 import {
+  buildCacheShapeDebugInfo,
+  calculateCacheReadRatio,
+  withCacheShapeDebugInfo
+} from '@renderer/lib/agent/cache-shape'
+import { prependTurnContextToLastUserMessage } from '@renderer/lib/agent/turn-context'
+import {
   decodeStructuredToolResult,
   encodeToolError,
   isStructuredToolErrorText
@@ -1076,11 +1082,14 @@ function normalizeUsageForPersistence(usage: TokenUsage, contextLength?: number)
     typeof contextLength === 'number' && contextLength > 0
       ? contextLength
       : readPersistedContextLength(usage)
+  const cacheReadRatio = calculateCacheReadRatio(usage)
+  const { cacheReadRatio: _cacheReadRatio, ...usageWithoutRatio } = usage
 
   return {
-    ...usage,
+    ...usageWithoutRatio,
     contextTokens: usage.contextTokens ?? usage.inputTokens,
-    ...(normalizedContextLength > 0 ? { contextLength: normalizedContextLength } : {})
+    ...(normalizedContextLength > 0 ? { contextLength: normalizedContextLength } : {}),
+    ...(cacheReadRatio !== undefined ? { cacheReadRatio } : {})
   }
 }
 
@@ -3827,7 +3836,7 @@ export function useChatActions(): {
         }
         const chatMcpContext =
           mode === 'chat' ? resolveActiveMcpContext(session?.projectId ?? null) : null
-        const registeredToolDefs = toolRegistry.getDefinitions()
+        const registeredToolDefs = toolRegistry.getStableDefinitions()
         const baseChatModeToolDefs =
           mode === 'chat' &&
           !(providerResolution.modelConfig?.category === 'image' && source !== 'continue')
@@ -3871,11 +3880,9 @@ export function useChatActions(): {
           const canReusePromptSnapshot =
             !!cachedPromptSnapshot &&
             cachedPromptSnapshot.mode === 'chat' &&
-            cachedPromptSnapshot.planMode === false &&
             (cachedPromptSnapshot.projectId ?? null) === (session?.projectId ?? null) &&
             (cachedPromptSnapshot.workingFolder ?? null) === (sessionWorkingFolder ?? null) &&
-            (cachedPromptSnapshot.sshConnectionId ?? null) === (session?.sshConnectionId ?? null) &&
-            cachedPromptSnapshot.contextCacheKey === chatPromptContextCacheKey
+            (cachedPromptSnapshot.sshConnectionId ?? null) === (session?.sshConnectionId ?? null)
 
           let chatSystemPrompt = cachedPromptSnapshot?.systemPrompt ?? ''
           if (!canReusePromptSnapshot) {
@@ -3892,6 +3899,11 @@ export function useChatActions(): {
               activeMcpTools: {}
             })
 
+            const promptSnapshotCacheShape = buildCacheShapeDebugInfo({
+              systemPrompt: chatSystemPrompt,
+              tools: [],
+              messages: []
+            })
             useChatStore.getState().setSessionPromptSnapshot(sessionId, {
               mode: 'chat',
               planMode: false,
@@ -3900,7 +3912,11 @@ export function useChatActions(): {
               projectId: session?.projectId,
               workingFolder: sessionWorkingFolder,
               sshConnectionId: session?.sshConnectionId ?? null,
-              contextCacheKey: chatPromptContextCacheKey
+              contextCacheKey: chatPromptContextCacheKey,
+              createdAt: Date.now(),
+              systemHash: promptSnapshotCacheShape.systemHash,
+              toolsHash: promptSnapshotCacheShape.toolsHash,
+              toolCount: promptSnapshotCacheShape.toolCount
             })
           }
 
@@ -3957,18 +3973,13 @@ export function useChatActions(): {
             chatMcpContext ?? resolveActiveMcpContext(session?.projectId ?? null)
 
           // Filter out team tools when the feature is disabled. Capture after registration changes.
-          const allToolDefs = toolRegistry.getDefinitions()
+          const allToolDefs = toolRegistry.getStableDefinitions()
           const finalToolDefs = filterTeamToolDefinitions(allToolDefs, settings.teamToolsEnabled)
-          let finalEffectiveToolDefs = finalToolDefs
+          let promptCandidateToolDefs = finalToolDefs
 
-          // Plan mode: restrict to read-only + planning tools
           const isPlanMode = useUIStore.getState().isPlanModeEnabled(sessionId)
-          if (isPlanMode) {
-            finalEffectiveToolDefs = finalEffectiveToolDefs.filter((t) =>
-              PLAN_MODE_ALLOWED_TOOLS.has(t.name)
-            )
-          } else if (mode === 'acp') {
-            finalEffectiveToolDefs = finalEffectiveToolDefs.filter((t) =>
+          if (mode === 'acp') {
+            promptCandidateToolDefs = promptCandidateToolDefs.filter((t) =>
               ACP_MODE_ALLOWED_TOOLS.has(t.name)
             )
           }
@@ -3979,7 +3990,7 @@ export function useChatActions(): {
           // Exception: allow tools when continuing an existing agent run
           const resolvedModelConfig = providerResolution.modelConfig
           if (resolvedModelConfig?.category === 'image' && source !== 'continue') {
-            finalEffectiveToolDefs = []
+            promptCandidateToolDefs = []
           }
 
           const desktopControlMode = resolveDesktopControlMode({
@@ -3989,10 +4000,14 @@ export function useChatActions(): {
           })
 
           if (desktopControlMode === 'computer-use') {
-            finalEffectiveToolDefs = finalEffectiveToolDefs.filter(
+            promptCandidateToolDefs = promptCandidateToolDefs.filter(
               (tool) => !isDesktopControlToolName(tool.name)
             )
           }
+
+          const requestCandidateToolDefs = isPlanMode
+            ? promptCandidateToolDefs.filter((t) => PLAN_MODE_ALLOWED_TOOLS.has(t.name))
+            : promptCandidateToolDefs
 
           const autoSelectedFastWithoutTools =
             settings.mainModelSelectionMode === 'auto' &&
@@ -4002,8 +4017,9 @@ export function useChatActions(): {
             providerResolution.autoSelection?.target === 'fast' &&
             providerResolution.autoSelection.toolsAllowed === false &&
             source !== 'continue'
-          const promptToolDefs = autoSelectedFastWithoutTools ? [] : finalEffectiveToolDefs
+          const promptToolDefs = autoSelectedFastWithoutTools ? [] : promptCandidateToolDefs
           const promptAllowsToolContext = !autoSelectedFastWithoutTools
+          const requestToolDefs = autoSelectedFastWithoutTools ? [] : requestCandidateToolDefs
 
           // Build channel info for system prompt — only inject channels bound to the current project
           let userPrompt = settings.systemPrompt || ''
@@ -4131,11 +4147,9 @@ export function useChatActions(): {
           const canReusePromptSnapshot =
             !!cachedPromptSnapshot &&
             cachedPromptSnapshot.mode === mode &&
-            cachedPromptSnapshot.planMode === isPlanMode &&
             (cachedPromptSnapshot.projectId ?? null) === (session?.projectId ?? null) &&
             (cachedPromptSnapshot.workingFolder ?? null) === (sessionWorkingFolder ?? null) &&
             (cachedPromptSnapshot.sshConnectionId ?? null) === (session?.sshConnectionId ?? null) &&
-            cachedPromptSnapshot.contextCacheKey === promptContextCacheKey &&
             haveSameToolDefinitions(cachedPromptSnapshot.toolDefs, promptToolDefs) &&
             // Plugin-bound sessions require plugin tools in the cached snapshot.
             // A stale snapshot (built when plugin tools were unregistered) must be
@@ -4143,11 +4157,11 @@ export function useChatActions(): {
             (!session?.pluginId ||
               cachedPromptSnapshot.toolDefs.some((t) => t.name === 'PluginSendMessage'))
 
-          let effectiveToolDefs = promptToolDefs
+          const effectiveToolDefs = requestToolDefs
           let agentSystemPrompt = cachedPromptSnapshot?.systemPrompt ?? ''
 
           if (canReusePromptSnapshot && cachedPromptSnapshot) {
-            effectiveToolDefs = cachedPromptSnapshot.toolDefs.slice()
+            agentSystemPrompt = cachedPromptSnapshot.systemPrompt
           } else {
             agentSystemPrompt =
               mode === 'chat'
@@ -4172,7 +4186,7 @@ export function useChatActions(): {
                     userRules: userPrompt || undefined,
                     toolDefs: promptToolDefs,
                     language: settings.language,
-                    planMode: isPlanMode,
+                    planMode: false,
                     hasActiveTeam: !!activeTeam,
                     activeTeam,
                     memorySnapshot,
@@ -4180,15 +4194,24 @@ export function useChatActions(): {
                     environmentContext
                   })
 
+            const promptSnapshotCacheShape = buildCacheShapeDebugInfo({
+              systemPrompt: agentSystemPrompt,
+              tools: promptToolDefs,
+              messages: []
+            })
             useChatStore.getState().setSessionPromptSnapshot(sessionId, {
               mode,
-              planMode: isPlanMode,
+              planMode: false,
               systemPrompt: agentSystemPrompt,
               toolDefs: promptToolDefs,
               projectId: session?.projectId,
               workingFolder: sessionWorkingFolder,
               sshConnectionId: session?.sshConnectionId ?? null,
-              contextCacheKey: promptContextCacheKey
+              contextCacheKey: promptContextCacheKey,
+              createdAt: Date.now(),
+              systemHash: promptSnapshotCacheShape.systemHash,
+              toolsHash: promptSnapshotCacheShape.toolsHash,
+              toolCount: promptSnapshotCacheShape.toolCount
             })
           }
 
@@ -4380,6 +4403,15 @@ export function useChatActions(): {
                 ]
               }
             }
+
+            messagesToSend = prependTurnContextToLastUserMessage(messagesToSend, {
+              planMode: isPlanMode
+            })
+            const agentRequestCacheShape = buildCacheShapeDebugInfo({
+              systemPrompt: agentSystemPrompt,
+              tools: effectiveToolDefs,
+              messages: messagesToSend
+            })
 
             const maxParallelTools = getConfiguredMaxParallelTools()
             const sidecarRequest = buildSidecarAgentRunRequest({
@@ -5212,6 +5244,17 @@ export function useChatActions(): {
                     if (normalizedUsage!.contextLength) {
                       accumulatedUsage.contextLength = normalizedUsage!.contextLength
                     }
+                    if (lastRequestDebugInfo) {
+                      lastRequestDebugInfo = withCacheShapeDebugInfo(
+                        lastRequestDebugInfo,
+                        agentRequestCacheShape,
+                        normalizedUsage
+                      )
+                      setLastDebugInfo(assistantMsgId, lastRequestDebugInfo)
+                      updateRuntimeMessage(sessionId!, assistantMsgId, {
+                        debugInfo: lastRequestDebugInfo
+                      })
+                    }
                   }
                   if (event.timing) {
                     requestTimings.push(event.timing)
@@ -5305,15 +5348,18 @@ export function useChatActions(): {
                 case 'request_debug': {
                   streamDeltaBuffer.flushNow()
                   if (event.debugInfo) {
-                    lastRequestDebugInfo = {
-                      ...event.debugInfo,
-                      providerId: event.debugInfo.providerId ?? agentProviderConfig.providerId,
-                      providerBuiltinId:
-                        event.debugInfo.providerBuiltinId ?? agentProviderConfig.providerBuiltinId,
-                      model: event.debugInfo.model ?? agentProviderConfig.model,
-                      executionPath:
-                        event.debugInfo.executionPath ?? (useSidecar ? 'sidecar' : 'node')
-                    }
+                    lastRequestDebugInfo = withCacheShapeDebugInfo(
+                      {
+                        ...event.debugInfo,
+                        providerId: event.debugInfo.providerId ?? agentProviderConfig.providerId,
+                        providerBuiltinId:
+                          event.debugInfo.providerBuiltinId ?? agentProviderConfig.providerBuiltinId,
+                        model: event.debugInfo.model ?? agentProviderConfig.model,
+                        executionPath:
+                          event.debugInfo.executionPath ?? (useSidecar ? 'sidecar' : 'node')
+                      },
+                      agentRequestCacheShape
+                    )
                     currentUsageProviderId =
                       lastRequestDebugInfo.providerId ?? currentUsageProviderId
                     currentUsageModelId = lastRequestDebugInfo.model ?? currentUsageModelId
@@ -6253,6 +6299,15 @@ async function runSimpleChat(
     ipc: ipcClient,
     supportsVision: modelSupportsVision(chatModelConfig, config.type)
   })
+  const isPlanMode = useUIStore.getState().isPlanModeEnabled(sessionId)
+  requestMessages = prependTurnContextToLastUserMessage(requestMessages, {
+    planMode: isPlanMode
+  })
+  const simpleRequestCacheShape = buildCacheShapeDebugInfo({
+    systemPrompt: config.systemPrompt ?? '',
+    tools: [],
+    messages: requestMessages
+  })
   const streamDeltaBuffer = createStreamDeltaBuffer(sessionId, assistantMsgId)
   const requestHasImages = requestMessages.some(messageContainsImage)
   const preferRendererProvider = useSettingsStore.getState().devMode || requestHasImages
@@ -6459,6 +6514,14 @@ async function runSimpleChat(
               estimatedContextTokens: contextTokensOverride,
               preferEstimatedContextTokens: debugContextEstimate?.hadBase64Payload ?? false
             })
+            if (lastRequestDebugInfo) {
+              lastRequestDebugInfo = withCacheShapeDebugInfo(
+                lastRequestDebugInfo,
+                simpleRequestCacheShape,
+                normalizedUsage
+              )
+              setLastDebugInfo(assistantMsgId, lastRequestDebugInfo)
+            }
             const messageUsage = event.timing
               ? {
                   ...normalizedUsage,
@@ -6487,12 +6550,15 @@ async function runSimpleChat(
         case 'request_debug': {
           streamDeltaBuffer.flushNow()
           if (event.debugInfo) {
-            lastRequestDebugInfo = {
-              ...event.debugInfo,
-              providerId: config.providerId,
-              providerBuiltinId: config.providerBuiltinId,
-              model: config.model
-            }
+            lastRequestDebugInfo = withCacheShapeDebugInfo(
+              {
+                ...event.debugInfo,
+                providerId: config.providerId,
+                providerBuiltinId: config.providerBuiltinId,
+                model: config.model
+              },
+              simpleRequestCacheShape
+            )
             setLastDebugInfo(assistantMsgId, {
               ...lastRequestDebugInfo
             })

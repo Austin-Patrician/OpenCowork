@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.119] - 2026-06-19
+
+### Added
+
+- Added Volcengine (火山引擎) provider preset with Doubao Seed 2.1 Pro/Turbo models supporting vision, function calling, and thinking.
+- Added Doubao Seed Evolving, Seed 2.1 Pro (260628), and Seed 2.1 Turbo (260628) models to Routin AI provider.
+- Added sub-agent workspace protocol injection — sub-agents now automatically load project-level AGENTS.md as authoritative workspace context.
+- Added parallel tool calls prompt for sub-agents to maximize concurrent independent tool invocations.
+- Added sub-agent runtime cache policy with prompt cache key generation for OpenAI Responses WebSocket backend.
+- Added `turn-context` injection for plan mode sub-agent runs.
+- Added stable tool definition sorting (by name → description → schema) for deterministic cache keys.
+- Added `cache-shape` module with stable hash/serialize utilities for prompt cache debugging.
+- Added `SmoothTokenNumber` component with animated token counter transitions.
+- Added thinking content extraction and model avatar with breathing dots animation for streaming placeholder state.
+- Added model info hover card panel in model switcher showing provider, capabilities, and auto-routing target model.
+- Added `toolUseOrderById` index for sub-agent inline rendering decisions.
+- Added `canRenderInlineSubAgentRun` heuristic for multi-sub-agent message layout decisions.
+- Added `resolveSubAgentProviderConfig` with session-scoped provider resolution.
+
+### Changed
+
+- Refactored chat streaming placeholder from static "生成回复" to "Thinking.../正在思考中..." with per-model avatar and animated breathing dots.
+- Replaced model switcher plain label with hover card showing model name, provider, and capability tags for auto-routing clarity.
+- Deferred large Read tool result text rendering to lazy mount for performance.
+- Memoized MCP active tool computation to reduce store selector re-derivation.
+- Set pending assistant message timestamp to current time instead of epoch 0 for correct sort order.
+- Hidden file diff dialog close button to match interaction design.
+
+### Fixed
+
+- fix(mcp): expose connected MCP tools in chat for MCP-enabled sessions.
+- Fixed sub-agent inline rendering: background sub-agents now properly hidden and synchronous sub-agents rendered inline when no visible content sits between them.
+
+### Documentation
+
+- Added comprehensive Repository Guidelines (AGENTS.md) covering project structure, build commands, coding conventions, and commit guidelines.
+- Updated README.md and README.zh.md.
+
 ## [0.9.118] - 2026-06-17
 
 ### Added

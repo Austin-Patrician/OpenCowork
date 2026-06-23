@@ -31,13 +31,10 @@ export function formatTokensDecimal(n: number): string {
 
 export function getBillableInputTokens(
   usage: TokenUsage,
-  requestType?: ProviderType | AIModelConfig['type']
+  _requestType?: ProviderType | AIModelConfig['type']
 ): number {
   if (usage.billableInputTokens != null) return usage.billableInputTokens
-  if (requestType === 'openai-responses') {
-    return Math.max(0, usage.inputTokens - (usage.cacheReadTokens ?? 0))
-  }
-  return usage.inputTokens ?? 0
+  return Math.max(0, (usage.inputTokens ?? 0) - Math.max(0, usage.cacheReadTokens ?? 0))
 }
 
 export function getCacheHitRate(billableInputTokens: number, cacheReadTokens: number): number {
@@ -49,6 +46,12 @@ export function getCacheHitRate(billableInputTokens: number, cacheReadTokens: nu
 
   if (totalInputTokens <= 0) return 0
   return safeCacheReadTokens / totalInputTokens
+}
+
+export function formatCacheHitRate(rate: number): string {
+  const safeRate = Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : 0
+  const percent = Math.round(safeRate * 1000) / 10
+  return `${Number.isInteger(percent) ? percent.toFixed(0) : percent.toFixed(1)}%`
 }
 
 export function getBillableTotalTokens(

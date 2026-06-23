@@ -31,6 +31,7 @@ export interface AgentTokenUsage {
   cacheCreation5mTokens?: number
   cacheCreation1hTokens?: number
   cacheReadTokens?: number
+  cacheReadRatio?: number
   reasoningTokens?: number
   contextTokens?: number
   contextLength?: number

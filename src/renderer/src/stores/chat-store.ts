@@ -45,6 +45,10 @@ export interface SessionPromptSnapshot {
   workingFolder?: string
   sshConnectionId?: string | null
   contextCacheKey?: string
+  systemHash?: string
+  toolsHash?: string
+  toolCount?: number
+  createdAt?: number
 }
 
 export interface Project {

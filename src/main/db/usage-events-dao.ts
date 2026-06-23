@@ -2,10 +2,7 @@ import { getDb } from './database'
 
 const EFFECTIVE_INPUT_TOKENS_EXPR = `COALESCE(
   billable_input_tokens,
-  CASE
-    WHEN request_type = 'openai-responses' THEN MAX(input_tokens - COALESCE(cache_read_tokens, 0), 0)
-    ELSE input_tokens
-  END
+  MAX(input_tokens - COALESCE(cache_read_tokens, 0), 0)
 )`
 const USAGE_EVENTS_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 const USAGE_EVENTS_CLEANUP_BATCH_SIZE = 250
@@ -120,9 +117,7 @@ function getEffectiveInputTokens(
 
   const inputTokens = toNumber(event.input_tokens)
   const cacheReadTokens = toNumber(event.cache_read_tokens)
-  return event.request_type === 'openai-responses'
-    ? Math.max(0, inputTokens - cacheReadTokens)
-    : Math.max(0, inputTokens)
+  return Math.max(0, inputTokens - cacheReadTokens)
 }
 
 function addUsageActivityAggregate(db: ReturnType<typeof getDb>, event: UsageEventRow): void {
