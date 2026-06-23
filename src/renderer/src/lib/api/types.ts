@@ -24,7 +24,7 @@ export interface TokenUsage {
   cacheCreation1hTokens?: number
   /** Anthropic prompt caching: tokens read from cache */
   cacheReadTokens?: number
-  /** cacheReadTokens / inputTokens for the normalized request usage */
+  /** cacheReadTokens / inputTokens for the normalized request usage. */
   cacheReadRatio?: number
   /** Reasoning model (o3/o4-mini etc.) internal thinking tokens */
   reasoningTokens?: number

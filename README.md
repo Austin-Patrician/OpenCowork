@@ -65,12 +65,12 @@ Every conversation picks the right mode:
 
 - **File & Shell** — Read, Write, Edit, Glob, Grep, Bash (local and SSH).
 - **Browser** — Built-in webview with navigate, snapshot, click, type, and content extraction.
-- **Task & Team** — Decompose work with TodoWrite, spawn parallel sub-agents via Task, and orchestrate Agent Teams with TeamCreate/SendMessage/TeamStatus.
+- **Task & Team** — Decompose work with TaskCreate/TaskUpdate, spawn parallel sub-agents via Task, and orchestrate Agent Teams with TeamCreate/SendMessage/TeamStatus.
 - **Plan Mode** — EnterPlanMode → write plan → ExitPlanMode for structured, reviewable implementation plans.
 - **Goal Tracking** — Create, track, and complete session-level goals with token budgets.
 - **Memory System** — Layered memory: global SOUL.md / USER.md / MEMORY.md and per-project .agents/ overrides.
 - **Cron Agent** — Schedule recurring or one-shot background agent tasks with multi-channel delivery.
-- **MCP Client** — Connect to Model Context Protocol servers (stdio, SSE, streamable-HTTP).
+- **MCP Client** — Connect to Model Context Protocol servers (stdio, SSE, streamable-HTTP) and expose active MCP tools directly to the agent.
 - **Skill System** — Install domain-specific skills from the Skills Market; loaded dynamically and surfaced to the agent at runtime.
 - **Custom Extensions** — Build plugins with declarative HTTP tools, sandboxed JS handlers, and custom HTML renderers.
 

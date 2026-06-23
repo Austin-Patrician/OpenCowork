@@ -103,9 +103,9 @@ export function sessionToMarkdown(session: Session): string {
       const extras: string[] = []
       const billableInput = getBillableInputTokens(msg.usage)
       if (msg.usage.cacheReadTokens) {
-        const cacheHitRate = getCacheHitRate(billableInput, msg.usage.cacheReadTokens)
+        const cacheTokenShare = getCacheHitRate(billableInput, msg.usage.cacheReadTokens)
         extras.push(`${msg.usage.cacheReadTokens} cached`)
-        extras.push(`${formatCacheHitRate(cacheHitRate)} cache hit rate`)
+        extras.push(`${formatCacheHitRate(cacheTokenShare)} cached token share`)
       }
       if (msg.usage.reasoningTokens) extras.push(`${msg.usage.reasoningTokens} reasoning`)
       lines.push(
@@ -134,9 +134,9 @@ export function sessionToMarkdown(session: Session): string {
     lines.push('')
     const totalExtras: string[] = []
     if (totals.cacheRead > 0) {
-      const cacheHitRate = getCacheHitRate(totals.input, totals.cacheRead)
+      const cacheTokenShare = getCacheHitRate(totals.input, totals.cacheRead)
       totalExtras.push(`${totals.cacheRead} cache read`)
-      totalExtras.push(`${formatCacheHitRate(cacheHitRate)} cache hit rate`)
+      totalExtras.push(`${formatCacheHitRate(cacheTokenShare)} cached token share`)
     }
     if (totals.cacheCreation > 0) totalExtras.push(`${totals.cacheCreation} cache write`)
     if (totals.reasoning > 0) totalExtras.push(`${totals.reasoning} reasoning`)

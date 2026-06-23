@@ -71,7 +71,8 @@ import { TEAM_TOOL_NAMES } from '@renderer/lib/agent/teams/register'
 import { useProviderStore } from '@renderer/stores/provider-store'
 import {
   getBillableInputTokens,
-  getCacheHitRate,
+  getCacheCreationTokens,
+  getUsageCacheHitRate,
   formatCacheHitRate
 } from '@renderer/lib/format-tokens'
 import { formatDurationMs } from '@renderer/lib/format-duration'
@@ -163,9 +164,6 @@ interface InlineCompactSummaryEntry {
 
 interface ModelThinkingIndicatorProps {
   modelName: string
-  modelId?: string | null
-  modelIcon?: string
-  providerBuiltinId?: string
   label: string
 }
 
@@ -663,6 +661,25 @@ function DebugToggleButton({ debugInfo }: { debugInfo: RequestDebugInfo }): Reac
       return debugInfo.body
     }
   })()
+  const cacheShapeRows = [
+    { label: 'System hash', value: debugInfo.systemHash },
+    { label: 'Tools hash', value: debugInfo.toolsHash },
+    { label: 'Message prefix hash', value: debugInfo.messagePrefixHash },
+    {
+      label: 'Tool count',
+      value: typeof debugInfo.toolCount === 'number' ? String(debugInfo.toolCount) : undefined
+    },
+    {
+      label: 'Cache read',
+      value:
+        typeof debugInfo.cacheReadRatio === 'number'
+          ? formatCacheHitRate(debugInfo.cacheReadRatio)
+          : undefined
+    }
+  ].filter(
+    (row): row is { label: string; value: string } =>
+      typeof row.value === 'string' && row.value.length > 0
+  )
 
   return (
     <>
@@ -704,6 +721,24 @@ function DebugToggleButton({ debugInfo }: { debugInfo: RequestDebugInfo }): Reac
                 </span>
               </div>
             </div>
+            {cacheShapeRows.length > 0 ? (
+              <div
+                className="space-y-1.5 border-b px-4 py-2 text-[11px]"
+                style={{ fontFamily: MONO_FONT }}
+              >
+                <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Cache Shape
+                </div>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {cacheShapeRows.map((row) => (
+                    <div key={row.label} className="flex min-w-0 gap-2">
+                      <span className="shrink-0 text-muted-foreground/60">{row.label}</span>
+                      <span className="min-w-0 break-all text-foreground">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {bodyFormatted && (
               <div>
                 <div className="flex items-center justify-between border-b bg-muted/20 px-4 py-1.5">
@@ -846,38 +881,22 @@ function GenerationProcessLine({
 
 function ModelThinkingIndicator({
   modelName,
-  modelId,
-  modelIcon,
-  providerBuiltinId,
   label
 }: ModelThinkingIndicatorProps): React.JSX.Element {
   const statusLabel = modelName ? `${modelName} ${label}` : label
 
   return (
-    <div className="flex flex-col items-start gap-1.5 py-1" role="status" aria-label={statusLabel}>
-      <span
-        className="pending-assistant-avatar flex size-8 shrink-0 items-center justify-center rounded-full border border-border/55 bg-muted/35 shadow-sm"
-        title={modelName}
-      >
-        <ModelIcon
-          icon={modelIcon}
-          modelId={modelId ?? undefined}
-          providerBuiltinId={providerBuiltinId}
-          size={20}
-        />
+    <div className="pending-assistant-status" role="status" aria-label={statusLabel}>
+      <span className="pending-assistant-wave" aria-hidden="true">
+        {[0, 1, 2, 3].map((index) => (
+          <span
+            key={index}
+            className="pending-assistant-bar"
+            style={{ animationDelay: `${index * 130}ms` }}
+          />
+        ))}
       </span>
-      <span className="flex min-h-4 items-center gap-1.5 text-xs leading-4 text-muted-foreground/72">
-        <span className="flex items-center gap-1" aria-hidden="true">
-          {[0, 1, 2].map((index) => (
-            <span
-              key={index}
-              className="pending-assistant-dot size-1.5 rounded-full bg-primary/65"
-              style={{ animationDelay: `${index * 150}ms` }}
-            />
-          ))}
-        </span>
-        <span>{label}</span>
-      </span>
+      <span className="pending-assistant-label">{label}</span>
     </div>
   )
 }
@@ -1964,9 +1983,6 @@ export function AssistantMessage({
         <div className={liveComponentClassName || undefined}>
           <ModelThinkingIndicator
             modelName={thinkingModel.modelName}
-            modelId={thinkingModel.modelId}
-            modelIcon={thinkingModel.modelIcon}
-            providerBuiltinId={thinkingModel.providerBuiltinId}
             label={t('assistantMessage.thinkingStatus', {
               defaultValue: 'Thinking...'
             })}
@@ -1989,9 +2005,6 @@ export function AssistantMessage({
             {isStreaming ? (
               <ModelThinkingIndicator
                 modelName={thinkingModel.modelName}
-                modelId={thinkingModel.modelId}
-                modelIcon={thinkingModel.modelIcon}
-                providerBuiltinId={thinkingModel.providerBuiltinId}
                 label={t('assistantMessage.thinkingStatus', {
                   defaultValue: 'Thinking...'
                 })}
@@ -2019,9 +2032,6 @@ export function AssistantMessage({
           {isStreaming ? (
             <ModelThinkingIndicator
               modelName={thinkingModel.modelName}
-              modelId={thinkingModel.modelId}
-              modelIcon={thinkingModel.modelIcon}
-              providerBuiltinId={thinkingModel.providerBuiltinId}
               label={t('assistantMessage.thinkingStatus', {
                 defaultValue: 'Thinking...'
               })}
@@ -2677,16 +2687,12 @@ export function AssistantMessage({
     const modelCfg = provider?.models.find((item) => item.id === modelId) ?? null
     const billableInput = getBillableInputTokens(usage, modelCfg?.type)
     const cacheRead = Math.max(0, usage.cacheReadTokens ?? 0)
-    const cacheCreation = Math.max(
-      0,
-      usage.cacheCreationTokens ??
-        (usage.cacheCreation5mTokens ?? 0) + (usage.cacheCreation1hTokens ?? 0)
-    )
+    const cacheCreation = getCacheCreationTokens(usage)
     const output = Math.max(0, usage.outputTokens ?? 0)
     const composedInput = billableInput + cacheRead + cacheCreation
     const rawInput = Math.max(0, usage.inputTokens ?? 0, composedInput)
     const totalTokens = rawInput + output
-    const cacheHitRate = getCacheHitRate(billableInput, cacheRead)
+    const cacheHitRate = getUsageCacheHitRate(usage, modelCfg?.type)
     const uncachedColor = '#737373'
     const cacheReadColor = '#f59e0b'
     const cacheCreationColor = '#a78bfa'
@@ -2767,9 +2773,9 @@ export function AssistantMessage({
     if (billableInput + cacheRead > 0) {
       metricRows.push({
         key: 'cache-hit-rate',
-        label: t('analytics.cacheHitRate', {
+        label: t('analytics.cacheTokenShare', {
           ns: 'settings',
-          defaultValue: 'Cache Hit Rate'
+          defaultValue: 'Cached Token Share'
         }),
         value: formatCacheHitRate(cacheHitRate)
       })

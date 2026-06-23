@@ -600,7 +600,12 @@ function handleStats(ctx: CommandContext, args: string): CommandResult {
         }
         totalInput +=
           usage.billableInputTokens ??
-          Math.max(0, (usage.inputTokens ?? 0) - Math.max(0, usage.cacheReadTokens ?? 0))
+          Math.max(
+            0,
+            (usage.inputTokens ?? 0) -
+              Math.max(0, usage.cacheReadTokens ?? 0) -
+              Math.max(0, usage.cacheCreationTokens ?? 0)
+          )
         totalOutput += usage.outputTokens ?? 0
         totalCacheCreation += usage.cacheCreationTokens ?? 0
         totalCacheRead += usage.cacheReadTokens ?? 0
@@ -635,9 +640,9 @@ function handleStats(ctx: CommandContext, args: string): CommandResult {
       lines.push('')
       lines.push(`💾 Cache:`)
       if (totalCacheRead > 0) {
-        const cacheHitRate = totalCacheRead / (totalInput + totalCacheRead)
-        lines.push(`  Cache Hit: ${formatNum(totalCacheRead)}`)
-        lines.push(`  Cache Hit Rate: ${formatPercent(cacheHitRate)}`)
+        const cacheTokenShare = totalCacheRead / (totalInput + totalCacheRead)
+        lines.push(`  Cache Read: ${formatNum(totalCacheRead)}`)
+        lines.push(`  Cached Token Share: ${formatPercent(cacheTokenShare)}`)
       }
       if (totalCacheCreation > 0) lines.push(`  Cache Write: ${formatNum(totalCacheCreation)}`)
     }

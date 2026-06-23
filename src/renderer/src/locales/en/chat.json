@@ -69,11 +69,13 @@
     "compressionBudget": "Compression Budget",
     "remaining": "remaining",
     "runtimeMetrics": {
-      "input": "Input",
+      "input": "Uncached input",
       "cache": "Cache",
       "cacheHit": "Cache hit",
       "cacheCreate": "Cache write",
-      "output": "Output"
+      "output": "Output",
+      "tps": "TPS",
+      "ttft": "TTFT"
     },
     "runtimeStatus": {
       "ready": "Ready",

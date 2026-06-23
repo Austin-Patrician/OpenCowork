@@ -43,6 +43,7 @@ interface McpStore {
   getActiveMcpIds: (projectId?: string | null) => string[]
   getActiveMcps: (projectId?: string | null) => McpServerConfig[]
   getActiveMcpTools: (projectId?: string | null) => Record<string, McpTool[]>
+  getActiveMcpResources: (projectId?: string | null) => Record<string, McpResource[]>
 
   // UI
   selectedServerId: string | null
@@ -304,6 +305,18 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     for (const id of activeMcpIds) {
       if (serverTools[id]?.length) {
         result[id] = serverTools[id]
+      }
+    }
+    return result
+  },
+
+  getActiveMcpResources: (projectId) => {
+    const activeMcpIds = get().getActiveMcpIds(projectId)
+    const { serverResources } = get()
+    const result: Record<string, McpResource[]> = {}
+    for (const id of activeMcpIds) {
+      if (serverResources[id]?.length) {
+        result[id] = serverResources[id]
       }
     }
     return result

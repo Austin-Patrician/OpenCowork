@@ -38,9 +38,34 @@ export const routinAiPreset: BuiltinProviderPreset = {
       maxOutputTokens: 32_768,
       supportsVision: true,
       supportsFunctionCall: true,
-      inputPrice: 6.5,
-      outputPrice: 27,
-      cacheHitPrice: 1.3
+      inputPrice: 0.95,
+      outputPrice: 4,
+      cacheHitPrice: 0.19,
+      supportsThinking: true,
+      thinkingConfig: {
+        bodyParams: { thinking: { type: 'enabled' } },
+        disabledBodyParams: { thinking: { type: 'disabled' } },
+        forceTemperature: 1
+      }
+    },
+    {
+      id: 'kimi-k2.7-code-highspeed',
+      name: 'Kimi K2.7 Code HighSpeed',
+      icon: 'kimi',
+      enabled: true,
+      contextLength: 262_144,
+      maxOutputTokens: 32_768,
+      supportsVision: true,
+      supportsFunctionCall: true,
+      inputPrice: 1.9,
+      outputPrice: 8,
+      cacheHitPrice: 0.38,
+      supportsThinking: true,
+      thinkingConfig: {
+        bodyParams: { thinking: { type: 'enabled' } },
+        disabledBodyParams: { thinking: { type: 'disabled' } },
+        forceTemperature: 1
+      }
     },
     {
       id: 'kimi-k2.5',
@@ -159,16 +184,53 @@ export const routinAiPreset: BuiltinProviderPreset = {
       outputPrice: 0.56
     },
     {
+      id: 'mimo-v2.5-pro',
+      name: 'MiMo V2.5 Pro',
+      icon: 'mimo',
+      enabled: true,
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+      supportsVision: false,
+      supportsFunctionCall: true,
+      inputPrice: 0.435,
+      outputPrice: 0.87,
+      cacheHitPrice: 0.0036,
+      supportsThinking: true,
+      thinkingConfig: {
+        bodyParams: { thinking: { type: 'enabled' } },
+        disabledBodyParams: { thinking: { type: 'disabled' } }
+      }
+    },
+    {
+      id: 'mimo-v2.5',
+      name: 'MiMo V2.5',
+      icon: 'mimo',
+      enabled: true,
+      contextLength: 1_000_000,
+      maxOutputTokens: 131_072,
+      supportsVision: true,
+      supportsFunctionCall: true,
+      inputPrice: 0.14,
+      outputPrice: 0.28,
+      cacheHitPrice: 0.0028,
+      supportsThinking: true,
+      thinkingConfig: {
+        bodyParams: { thinking: { type: 'enabled' } },
+        disabledBodyParams: { thinking: { type: 'disabled' } }
+      }
+    },
+    {
       id: 'mimo-v2-flash',
-      name: 'Mimo V2 Flash',
+      name: 'MiMo V2 Flash',
       icon: 'mimo',
       enabled: true,
       contextLength: 262_144,
-      maxOutputTokens: 131072,
+      maxOutputTokens: 131_072,
       supportsVision: false,
       supportsFunctionCall: true,
-      inputPrice: 0.09,
-      outputPrice: 0.29,
+      inputPrice: 0.14,
+      outputPrice: 0.28,
+      cacheHitPrice: 0.0028,
       supportsThinking: true,
       thinkingConfig: {
         bodyParams: { thinking: { type: 'enabled' } },
@@ -184,6 +246,9 @@ export const routinAiPreset: BuiltinProviderPreset = {
       maxOutputTokens: 131_072,
       supportsVision: false,
       supportsFunctionCall: true,
+      inputPrice: 1.305,
+      outputPrice: 2.61,
+      cacheHitPrice: 0.0108,
       supportsThinking: true,
       thinkingConfig: {
         bodyParams: { thinking: { type: 'enabled' } },

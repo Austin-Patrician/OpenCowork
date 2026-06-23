@@ -62,13 +62,18 @@ function normalizeMessageForHash(message: UnifiedMessage): unknown {
   }
 }
 
-export function calculateCacheReadRatio(
-  usage: Pick<TokenUsage, 'inputTokens' | 'cacheReadTokens'> | null | undefined
-): number | undefined {
-  const inputTokens = usage?.inputTokens ?? 0
-  if (!Number.isFinite(inputTokens) || inputTokens <= 0) return undefined
-  const cacheReadTokens = Math.max(0, usage?.cacheReadTokens ?? 0)
-  return cacheReadTokens / inputTokens
+type CacheRatioUsage = Partial<Pick<TokenUsage, 'inputTokens' | 'cacheReadTokens'>> | null | undefined
+
+function readTokenCount(value: number | null | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+export function calculateCacheReadRatio(usage: CacheRatioUsage): number | undefined {
+  const inputTokens = readTokenCount(usage?.inputTokens)
+  if (inputTokens <= 0) return undefined
+
+  const cacheReadTokens = readTokenCount(usage?.cacheReadTokens)
+  return Math.min(1, cacheReadTokens / inputTokens)
 }
 
 export function buildCacheShapeDebugInfo(args: {

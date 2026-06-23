@@ -173,6 +173,7 @@ export function shouldCompress(inputTokens: number, config: CompressionConfig): 
 export function shouldPreCompress(inputTokens: number, config: CompressionConfig): boolean {
   void inputTokens
   void config
+  void getPreCompressionTriggerTokens
   return false
 }
 

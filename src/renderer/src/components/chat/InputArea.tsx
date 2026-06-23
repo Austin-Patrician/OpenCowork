@@ -43,6 +43,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui
 import { useProviderStore, modelSupportsVision } from '@renderer/stores/provider-store'
 import type {
   AIModelConfig,
+  RequestTiming,
   SelectedFileReference,
   TokenUsage,
   UnifiedMessage
@@ -54,8 +55,11 @@ import {
   estimateTokens,
   formatCacheHitRate,
   formatTokens,
+  getBillableInputTokens,
+  getCacheCreationTokens,
   getCacheHitRate
 } from '@renderer/lib/format-tokens'
+import { formatDurationMs } from '@renderer/lib/format-duration'
 import {
   getEffectiveContextWindow,
   resolveCompressionContextLength,
@@ -411,7 +415,7 @@ interface RuntimeOutputSnapshot {
   hasActiveThinking: boolean
 }
 
-type RuntimeMetricTone = 'input' | 'cacheHit' | 'cacheCreate' | 'output'
+type RuntimeMetricTone = 'input' | 'cacheHit' | 'cacheCreate' | 'output' | 'speed' | 'latency'
 
 interface RuntimeStatusView {
   text: string
@@ -426,6 +430,7 @@ interface RuntimeUsageTotals {
   billableInputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+  latestRequestTiming: RequestTiming | null
 }
 
 function normalizeTokenCount(value: number | null | undefined): number {
@@ -433,13 +438,34 @@ function normalizeTokenCount(value: number | null | undefined): number {
   return Math.floor(value)
 }
 
-function resolveCacheCreationTokens(usage: TokenUsage | undefined): number {
-  if (!usage) return 0
-  const direct = normalizeTokenCount(usage.cacheCreationTokens)
-  const detailed =
-    normalizeTokenCount(usage.cacheCreation5mTokens) +
-    normalizeTokenCount(usage.cacheCreation1hTokens)
-  return Math.max(direct, detailed)
+function toFinitePositiveNumber(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+}
+
+function getLatestRequestTiming(usage: TokenUsage | undefined): RequestTiming | null {
+  const timings = usage?.requestTimings
+  if (!timings?.length) return null
+  for (let index = timings.length - 1; index >= 0; index -= 1) {
+    const timing = timings[index]
+    if (
+      toFinitePositiveNumber(timing?.ttftMs) !== null ||
+      toFinitePositiveNumber(timing?.tps) !== null
+    ) {
+      return timing
+    }
+  }
+  return null
+}
+
+function formatRuntimeThroughput(value: number): string {
+  if (!Number.isFinite(value)) return '0'
+  return value >= 100 ? value.toFixed(1) : value.toFixed(2)
+}
+
+function formatRuntimeTtft(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '0s'
+  if (ms < 10_000) return `${(ms / 1000).toFixed(2)}s`
+  return formatDurationMs(ms)
 }
 
 function createEmptyRuntimeUsageTotals(): RuntimeUsageTotals {
@@ -448,16 +474,13 @@ function createEmptyRuntimeUsageTotals(): RuntimeUsageTotals {
     outputTokens: 0,
     billableInputTokens: 0,
     cacheReadTokens: 0,
-    cacheCreationTokens: 0
+    cacheCreationTokens: 0,
+    latestRequestTiming: null
   }
 }
 
 function getBillableInputForUsage(usage: TokenUsage): number {
-  const inputTokens = normalizeTokenCount(usage.inputTokens)
-  const cacheReadTokens = normalizeTokenCount(usage.cacheReadTokens)
-  return normalizeTokenCount(
-    usage.billableInputTokens ?? Math.max(0, inputTokens - cacheReadTokens)
-  )
+  return normalizeTokenCount(getBillableInputTokens(usage))
 }
 
 function addUsageToTotals(totals: RuntimeUsageTotals, usage: TokenUsage | undefined): void {
@@ -466,7 +489,8 @@ function addUsageToTotals(totals: RuntimeUsageTotals, usage: TokenUsage | undefi
   totals.outputTokens += normalizeTokenCount(usage.outputTokens)
   totals.billableInputTokens += getBillableInputForUsage(usage)
   totals.cacheReadTokens += normalizeTokenCount(usage.cacheReadTokens)
-  totals.cacheCreationTokens += resolveCacheCreationTokens(usage)
+  totals.cacheCreationTokens += normalizeTokenCount(getCacheCreationTokens(usage))
+  totals.latestRequestTiming = getLatestRequestTiming(usage) ?? totals.latestRequestTiming
 }
 
 function collectRuntimeOutputSnapshot(
@@ -546,7 +570,9 @@ const metricToneClasses: Record<RuntimeMetricTone, string> = {
   input: 'text-sky-500/85 dark:text-sky-300/85',
   cacheHit: 'text-emerald-500/85 dark:text-emerald-300/85',
   cacheCreate: 'text-amber-500/90 dark:text-amber-300/90',
-  output: 'text-violet-500/85 dark:text-violet-300/85'
+  output: 'text-violet-500/85 dark:text-violet-300/85',
+  speed: 'text-cyan-500/85 dark:text-cyan-300/85',
+  latency: 'text-rose-500/80 dark:text-rose-300/80'
 }
 
 function RuntimeMetric({
@@ -570,6 +596,26 @@ function RuntimeMetric({
       <span className={cn('tabular-nums font-medium', metricToneClasses[tone])}>
         <SmoothTokenNumber value={value} animate={animate} duration={duration} />
       </span>
+      {suffix && <span className="ml-0.5 tabular-nums text-muted-foreground/50">{suffix}</span>}
+    </span>
+  )
+}
+
+function RuntimeTextMetric({
+  label,
+  value,
+  tone,
+  suffix
+}: {
+  label: string
+  value: string
+  tone: RuntimeMetricTone
+  suffix?: string
+}): React.JSX.Element {
+  return (
+    <span className="shrink-0">
+      <span className="text-muted-foreground/60">{label}</span>{' '}
+      <span className={cn('tabular-nums font-medium', metricToneClasses[tone])}>{value}</span>
       {suffix && <span className="ml-0.5 tabular-nums text-muted-foreground/50">{suffix}</span>}
     </span>
   )
@@ -641,6 +687,7 @@ function ComposerRuntimeStatus({
         cumulativeBillableInputTokens: totals.billableInputTokens,
         cumulativeCacheReadTokens: totals.cacheReadTokens,
         cumulativeCacheCreationTokens: totals.cacheCreationTokens,
+        latestRequestTiming: totals.latestRequestTiming,
         isGeneratingImage: streamingMessageId
           ? Boolean(s.generatingImageMessages[streamingMessageId])
           : false
@@ -699,13 +746,15 @@ function ComposerRuntimeStatus({
   )
   const pendingInputTokens =
     isStreaming && live.currentInputTokens === 0 ? currentEstimatedInputTokens : draftInputTokens
-  const inputTokens = live.cumulativeInputTokens + pendingInputTokens
+  const inputTokens = live.cumulativeBillableInputTokens + pendingInputTokens
   const outputTokens =
     live.cumulativeOutputTokens +
     (isStreaming ? Math.max(0, estimatedOutputTokens - live.currentOutputTokens) : 0)
   const cacheReadTokens = live.cumulativeCacheReadTokens
   const cacheCreationTokens = live.cumulativeCacheCreationTokens
-  const cacheHitRate = getCacheHitRate(live.cumulativeBillableInputTokens, cacheReadTokens)
+  const cacheHitRate = getCacheHitRate(inputTokens, cacheReadTokens)
+  const latestTps = toFinitePositiveNumber(live.latestRequestTiming?.tps)
+  const latestTtftMs = toFinitePositiveNumber(live.latestRequestTiming?.ttftMs)
   const statusView = React.useMemo<RuntimeStatusView>(() => {
     if (isOptimizing) {
       return {
@@ -841,7 +890,7 @@ function ComposerRuntimeStatus({
       aria-live={isStreaming ? 'polite' : 'off'}
     >
       <RuntimeMetric
-        label={t('input.runtimeMetrics.input', { defaultValue: 'Input' })}
+        label={t('input.runtimeMetrics.input', { defaultValue: 'Uncached input' })}
         value={inputTokens}
         tone="input"
         animate={isStreaming}
@@ -872,6 +921,26 @@ function ComposerRuntimeStatus({
         animate
         duration={760}
       />
+      {latestTps !== null && (
+        <>
+          <span className="shrink-0 text-muted-foreground/35">/</span>
+          <RuntimeTextMetric
+            label={t('input.runtimeMetrics.tps', { defaultValue: 'TPS' })}
+            value={formatRuntimeThroughput(latestTps)}
+            tone="speed"
+          />
+        </>
+      )}
+      {latestTtftMs !== null && (
+        <>
+          <span className="shrink-0 text-muted-foreground/35">/</span>
+          <RuntimeTextMetric
+            label={t('input.runtimeMetrics.ttft', { defaultValue: 'TTFT' })}
+            value={formatRuntimeTtft(latestTtftMs)}
+            tone="latency"
+          />
+        </>
+      )}
       <span className="shrink-0 text-muted-foreground/35">/</span>
       <span className={cn('inline-flex min-w-0 items-center gap-1 truncate', statusView.className)}>
         <StatusIcon className={cn('size-3 shrink-0', statusView.spin && 'animate-spin')} />

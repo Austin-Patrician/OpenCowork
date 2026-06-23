@@ -65,12 +65,12 @@
 
 - **文件与 Shell** — Read、Write、Edit、Glob、Grep、Bash（支持本地和 SSH）。
 - **浏览器** — 内置 webview，支持导航、截图、点击、输入和内容提取。
-- **任务与团队** — 通过 TodoWrite 分解工作，通过 Task 派生并行子智能体，通过 TeamCreate/SendMessage/TeamStatus 编排 Agent 团队。
+- **任务与团队** — 通过 TaskCreate/TaskUpdate 分解和跟踪工作，通过 Task 派生并行子智能体，通过 TeamCreate/SendMessage/TeamStatus 编排 Agent 团队。
 - **Plan Mode** — EnterPlanMode → 编写计划 → ExitPlanMode，产出结构化、可审阅的实现计划。
 - **目标追踪** — 创建、跟踪和完成会话级目标，支持 Token 预算。
 - **记忆系统** — 分层记忆：全局 SOUL.md / USER.md / MEMORY.md，项目级 .agents/ 覆盖。
 - **Cron 智能体** — 调度周期性或一次性后台智能体任务，支持多渠道交付。
-- **MCP 客户端** — 连接 Model Context Protocol 服务器（stdio、SSE、streamable-HTTP）。
+- **MCP 客户端** — 连接 Model Context Protocol 服务器（stdio、SSE、streamable-HTTP），并将启用的 MCP 工具直接暴露给 Agent。
 - **技能系统** — 从技能市场安装领域特定技能；运行时动态加载并呈现给智能体。
 - **自定义扩展** — 通过声明式 HTTP 工具、沙箱 JS 处理器和自定义 HTML 渲染器构建插件。
 

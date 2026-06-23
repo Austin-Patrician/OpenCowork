@@ -261,9 +261,7 @@ function mergeMessageUsage(
 
   const inputTokens = current.inputTokens + incoming.inputTokens
   const cacheReadTokens = sumOptionalUsageValue(current.cacheReadTokens, incoming.cacheReadTokens)
-  const cacheReadRatio = calculateCacheReadRatio({ inputTokens, cacheReadTokens })
-
-  return {
+  const mergedUsage: UnifiedMessage['usage'] = {
     inputTokens,
     outputTokens: current.outputTokens + incoming.outputTokens,
     billableInputTokens: sumOptionalUsageValue(
@@ -283,11 +281,15 @@ function mergeMessageUsage(
       incoming.cacheCreation1hTokens
     ),
     cacheReadTokens,
-    ...(cacheReadRatio !== undefined ? { cacheReadRatio } : {}),
     reasoningTokens: sumOptionalUsageValue(current.reasoningTokens, incoming.reasoningTokens),
     contextTokens: incoming.contextTokens ?? current.contextTokens,
     totalDurationMs: sumOptionalUsageValue(current.totalDurationMs, incoming.totalDurationMs),
     requestTimings: [...(current.requestTimings ?? []), ...(incoming.requestTimings ?? [])]
+  }
+  const cacheReadRatio = calculateCacheReadRatio(mergedUsage)
+  return {
+    ...mergedUsage,
+    ...(cacheReadRatio !== undefined ? { cacheReadRatio } : {})
   }
 }
 

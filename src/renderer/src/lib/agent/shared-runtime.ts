@@ -6,6 +6,7 @@ import { buildSidecarAgentRunRequest } from '../ipc/sidecar-protocol'
 import { agentBridge } from '../ipc/agent-bridge'
 import { registerSidecarApprovalHandler } from '../ipc/sidecar-approval-registry'
 import { runAgentViaSidecar } from './run-agent-via-sidecar'
+import { calculateCacheReadRatio } from './cache-shape'
 
 export type SharedAgentRuntimeReason = LoopEndReason | 'shutdown'
 
@@ -407,8 +408,7 @@ export function mergeTokenUsage(target: TokenUsage, usage: TokenUsage): void {
   if (usage.cacheReadTokens) {
     target.cacheReadTokens = (target.cacheReadTokens ?? 0) + usage.cacheReadTokens
   }
-  const cacheReadRatio =
-    target.inputTokens > 0 ? Math.max(0, target.cacheReadTokens ?? 0) / target.inputTokens : undefined
+  const cacheReadRatio = calculateCacheReadRatio(target)
   if (cacheReadRatio !== undefined) {
     target.cacheReadRatio = cacheReadRatio
   } else {

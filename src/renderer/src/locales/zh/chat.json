@@ -69,11 +69,13 @@
     "compressionBudget": "压缩预算",
     "remaining": "剩余",
     "runtimeMetrics": {
-      "input": "输入",
+      "input": "未缓存输入",
       "cache": "缓存",
       "cacheHit": "缓存命中",
       "cacheCreate": "创建缓存",
-      "output": "输出"
+      "output": "输出",
+      "tps": "TPS",
+      "ttft": "首 token"
     },
     "runtimeStatus": {
       "ready": "就绪",
