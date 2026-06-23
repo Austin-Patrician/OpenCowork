@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.120] - 2026-06-23
+
+### Added
+
+- Added request timing metrics (TTFT, TPS) display in InputArea for real-time performance monitoring.
+- Added cache shape debugging information in AssistantMessage showing system hash, tools hash, message prefix hash, tool count, and cache read ratio.
+- Added new models to Routin AI provider: Kimi K2.7 Code HighSpeed, MiMo V2.5 Pro, MiMo V2.5 with thinking support.
+- Added `getCacheCreationTokens` and `getUsageCacheHitRate` utility functions for improved token usage tracking.
+- Added `calculateCacheReadRatio` function for cache analytics and debugging.
+- Added `RequestTiming` type support for detailed request performance metrics.
+
+### Changed
+
+- Enhanced chat components (AssistantMessage, ToolCallCard, InputArea) with improved UI and performance.
+- Improved settings pages and analytics overview with better data visualization.
+- Updated Anthropic API integration with optimized cache control logic and cache target selection.
+- Improved MCP tools and agent runtime with better error handling and stability.
+- Enhanced internationalization (en/zh) with updated translations.
+- Updated Routin AI provider models with new pricing and thinking support configurations.
+- Various performance and stability improvements across the application.
+
+### Fixed
+
+- Fixed widget rendering logic in ToolCallCard with simplified state management.
+- Fixed cache hit rate calculations and token usage tracking.
+- Fixed various UI inconsistencies and improved component rendering.
+
+### Removed
+
+- Removed unused imports and properties (Loader2, Wrench icons) for cleaner codebase.
+- Removed redundant model thinking indicator properties for simplified component API.
+
 ## [0.9.119] - 2026-06-19
 
 ### Added
