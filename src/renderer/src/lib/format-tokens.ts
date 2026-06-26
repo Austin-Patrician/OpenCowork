@@ -50,12 +50,21 @@ export function getCacheCreationTokens(usage: Partial<TokenUsage> | null | undef
   return Math.max(direct, detailed)
 }
 
-export function getCacheHitRate(billableInputTokens: number, cacheReadTokens: number): number {
+export function getCacheHitRate(
+  billableInputTokens: number,
+  cacheReadTokens: number,
+  cacheCreationTokens = 0
+): number {
   const safeBillableInputTokens = Number.isFinite(billableInputTokens)
     ? Math.max(0, billableInputTokens)
     : 0
   const safeCacheReadTokens = Number.isFinite(cacheReadTokens) ? Math.max(0, cacheReadTokens) : 0
-  const totalInputTokens = safeBillableInputTokens + safeCacheReadTokens
+  const safeCacheCreationTokens = Number.isFinite(cacheCreationTokens)
+    ? Math.max(0, cacheCreationTokens)
+    : 0
+  // Cache-creation tokens are cache misses billed at write price, so they belong in the
+  // denominator: the hit rate reflects the share of all input tokens served from cache.
+  const totalInputTokens = safeBillableInputTokens + safeCacheReadTokens + safeCacheCreationTokens
 
   if (totalInputTokens <= 0) return 0
   return safeCacheReadTokens / totalInputTokens
@@ -79,7 +88,11 @@ export function getUsageCacheHitRate(
   usage: TokenUsage,
   requestType?: ProviderType | AIModelConfig['type']
 ): number {
-  return getCacheHitRate(getBillableInputTokens(usage, requestType), usage.cacheReadTokens ?? 0)
+  return getCacheHitRate(
+    getBillableInputTokens(usage, requestType),
+    usage.cacheReadTokens ?? 0,
+    getCacheCreationTokens(usage)
+  )
 }
 
 export function getBillableTotalTokens(
@@ -130,6 +143,46 @@ export function resolveCacheCreationCost(
   }
 }
 
+export interface TokenCostBreakdown {
+  inputCost: number | null
+  outputCost: number | null
+  cacheCreationCost: number | null
+  cacheReadCost: number | null
+  totalCost: number | null
+}
+
+export function calculateCostBreakdown(
+  usage: TokenUsage,
+  model: AIModelConfig | null | undefined
+): TokenCostBreakdown {
+  const inputPrice = model?.inputPrice ?? null
+  const outputPrice = model?.outputPrice ?? null
+  const cacheCreationTokens = getCacheCreationTokens(usage)
+  const billableInput = getBillableInputTokens(usage, model?.type)
+  const cacheReadPrice = model?.cacheHitPrice ?? (inputPrice != null ? inputPrice * 0.1 : null)
+  const { cost: cacheCreationCost } = resolveCacheCreationCost(usage, model)
+
+  const inputCost = inputPrice == null ? null : (billableInput * inputPrice) / 1_000_000
+  const outputCost =
+    outputPrice == null ? null : ((usage.outputTokens ?? 0) * outputPrice) / 1_000_000
+  const resolvedCacheCreationCost =
+    cacheCreationTokens > 0 ? cacheCreationCost : inputPrice == null ? null : 0
+  const cacheReadCost =
+    cacheReadPrice == null ? null : ((usage.cacheReadTokens ?? 0) * cacheReadPrice) / 1_000_000
+  const pieces = [inputCost, outputCost, resolvedCacheCreationCost, cacheReadCost]
+  const totalCost = pieces.every((item) => item == null)
+    ? null
+    : pieces.reduce<number>((sum, item) => sum + (item ?? 0), 0)
+
+  return {
+    inputCost,
+    outputCost,
+    cacheCreationCost: resolvedCacheCreationCost,
+    cacheReadCost,
+    totalCost
+  }
+}
+
 /**
  * Calculate the USD cost of a request based on token usage and model pricing.
  * Prices in AIModelConfig are per **million** tokens.
@@ -141,16 +194,10 @@ export function calculateCost(
 ): number | null {
   if (!model || model.inputPrice == null || model.outputPrice == null) return null
 
-  const cacheRead = usage.cacheReadTokens ?? 0
   const cacheCreationTokens = getCacheCreationTokens(usage)
-  const billableInput = getBillableInputTokens(usage, model.type)
-  const cacheReadPrice = model.cacheHitPrice ?? model.inputPrice * 0.1
-  const { cost: cacheCreationCost } = resolveCacheCreationCost(usage, model)
+  const { totalCost, cacheCreationCost } = calculateCostBreakdown(usage, model)
   if (cacheCreationTokens > 0 && cacheCreationCost == null) return null
-
-  const inputCost = (billableInput * model.inputPrice + cacheRead * cacheReadPrice) / 1_000_000
-  const outputCost = ((usage.outputTokens ?? 0) * model.outputPrice) / 1_000_000
-  return inputCost + outputCost + (cacheCreationCost ?? 0)
+  return totalCost
 }
 
 /**

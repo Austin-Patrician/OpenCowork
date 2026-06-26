@@ -15,7 +15,6 @@ import { registerCronTools } from './cron-tool'
 import { registerNotifyTool } from './notify-tool'
 import { registerGoalTools } from './goal-tool'
 import { registerMemoryTools } from './memory-tool'
-import { updateWikiToolRegistration } from './wiki-tool'
 import { refreshDynamicToolCatalog } from './dynamic-tool-catalog'
 import { registerCodeCompatibleTools } from './code-compatible-tool'
 
@@ -63,5 +62,4 @@ export function updateWebSearchToolRegistration(enabled: boolean): void {
   }
 }
 
-export { updateWikiToolRegistration }
 export { ensureRequestToolCatalogFresh, refreshDynamicToolCatalog } from './dynamic-tool-catalog'

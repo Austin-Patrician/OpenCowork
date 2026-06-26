@@ -41,7 +41,8 @@
       "Bash(awk 'NR<=4920 && /chatStore = useChatStore/ {print NR\": \"$0}' /Users/token/Desktop/code/OpenCowork/src/renderer/src/hooks/use-chat-actions.ts)",
       "Bash(awk 'NR<=4914' /Users/token/Desktop/code/OpenCowork/src/renderer/src/hooks/use-chat-actions.ts)",
       "Bash(grep -nE \"^\\\\s*\\(async function|function|const \\\\w+ = \\(async \\)?\\\\\\(|\\\\}\\\\s*$\\)\")",
-      "Bash(awk 'NR>=2840 && NR<=2855' /Users/token/Desktop/code/OpenCowork/src/renderer/src/hooks/use-chat-actions.ts)"
+      "Bash(awk 'NR>=2840 && NR<=2855' /Users/token/Desktop/code/OpenCowork/src/renderer/src/hooks/use-chat-actions.ts)",
+      "Bash(awk '{print $NF}')"
     ]
   }
 }

@@ -218,11 +218,15 @@ function supportsPriorityServiceTier(model: AIModelConfig | undefined): boolean 
   return !!model?.serviceTier
 }
 
-function selectModel(provider: AIProvider, modelId: string, setOpen: (v: boolean) => void): void {
+function selectModel(
+  provider: AIProvider,
+  modelId: string,
+  scopedSessionId: string | null,
+  setOpen: (v: boolean) => void
+): void {
   const pid = provider.id
-  const sessionId = useChatStore.getState().activeSessionId
-  const session = sessionId
-    ? useChatStore.getState().sessions.find((item) => item.id === sessionId)
+  const session = scopedSessionId
+    ? useChatStore.getState().sessions.find((item) => item.id === scopedSessionId)
     : null
 
   if (session) {
@@ -255,10 +259,9 @@ function selectFastModel(
   setOpen(false)
 }
 
-function selectAutoModel(setOpen: (v: boolean) => void): void {
-  const sessionId = useChatStore.getState().activeSessionId
-  const session = sessionId
-    ? useChatStore.getState().sessions.find((item) => item.id === sessionId)
+function selectAutoModel(scopedSessionId: string | null, setOpen: (v: boolean) => void): void {
+  const session = scopedSessionId
+    ? useChatStore.getState().sessions.find((item) => item.id === scopedSessionId)
     : null
   if (session && !session.pluginId) {
     useChatStore.getState().setSessionModelAuto(session.id)
@@ -268,10 +271,12 @@ function selectAutoModel(setOpen: (v: boolean) => void): void {
   setOpen(false)
 }
 
-function selectFollowGlobalModel(setOpen: (v: boolean) => void): void {
-  const sessionId = useChatStore.getState().activeSessionId
-  const session = sessionId
-    ? useChatStore.getState().sessions.find((item) => item.id === sessionId)
+function selectFollowGlobalModel(
+  scopedSessionId: string | null,
+  setOpen: (v: boolean) => void
+): void {
+  const session = scopedSessionId
+    ? useChatStore.getState().sessions.find((item) => item.id === scopedSessionId)
     : null
   if (session) {
     useChatStore.getState().setSessionModelInherit(session.id)
@@ -346,12 +351,16 @@ function ModelSettingsPopover({
     [effortKey]
   )
 
+  const supportsAnthropicCacheTtl = requestType === 'anthropic'
+  const anthropicCacheTtl = model?.cacheTtl ?? '5m'
+
   const hasConfigControls =
     supportsThinking ||
     supportsFastMode ||
     supportsResponsesWebsocket ||
     supportsResponsesImageGeneration ||
-    supportsContextCompression
+    supportsContextCompression ||
+    supportsAnthropicCacheTtl
 
   const supportsAnthropicThinkingBudget =
     supportsThinking && requestType === 'anthropic' && !!model?.thinkingConfig
@@ -397,6 +406,17 @@ function ModelSettingsPopover({
         thinkingConfig: buildAnthropicThinkingConfigWithBudget(model.thinkingConfig, budget)
       })
       useSettingsStore.getState().updateSettings({ thinkingEnabled: true })
+    },
+    [model, providerId]
+  )
+
+  const updateAnthropicCacheTtl = useCallback(
+    (ttl: '5m' | '1h') => {
+      if (!model?.id) return
+      const providerStore = useProviderStore.getState()
+      const targetProviderId = providerId ?? providerStore.activeProviderId
+      if (!targetProviderId) return
+      providerStore.updateModel(targetProviderId, model.id, { cacheTtl: ttl })
     },
     [model, providerId]
   )
@@ -636,6 +656,41 @@ function ModelSettingsPopover({
                   </div>
                 )}
 
+                {supportsAnthropicCacheTtl && (
+                  <div className="px-2 py-1.5">
+                    <div className="mb-2 flex items-end justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">
+                          {tSettings('provider.cacheTtl')}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {tSettings('provider.cacheTtlHint')}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {(['5m', '1h'] as const).map((ttl) => {
+                        const active = anthropicCacheTtl === ttl
+                        return (
+                          <button
+                            key={ttl}
+                            type="button"
+                            className={cn(
+                              'rounded-md border px-2 py-1.5 text-xs font-medium transition-colors',
+                              active
+                                ? 'border-sky-400 bg-sky-500/10 text-sky-600 dark:text-sky-300'
+                                : 'border-border text-muted-foreground hover:bg-muted/50'
+                            )}
+                            onClick={() => updateAnthropicCacheTtl(ttl)}
+                          >
+                            {ttl}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {supportsFastMode && (
                   <PillToggle
                     enabled={fastModeEnabled}
@@ -699,9 +754,16 @@ function ModelSettingsPopover({
 }
 
 export function ModelSwitcher({
-  modelRoute = 'main'
+  modelRoute = 'main',
+  sessionId
 }: {
   modelRoute?: 'main' | 'fast'
+  /**
+   * Session this composer writes to. `null` means a new/draft session (home or
+   * project home) — selections should target the global model so the freshly
+   * created session inherits them. When omitted, falls back to the active session.
+   */
+  sessionId?: string | null
 }): React.JSX.Element {
   const { t } = useTranslation('layout')
   const { t: tChat } = useTranslation('chat')
@@ -733,7 +795,8 @@ export function ModelSwitcher({
     })
   )
   const quotaByKey = useQuotaStore((s) => s.quotaByKey)
-  const activeSessionId = useChatStore((s) => s.activeSessionId)
+  const fallbackActiveSessionId = useChatStore((s) => s.activeSessionId)
+  const activeSessionId = sessionId !== undefined ? sessionId : fallbackActiveSessionId
   const sessions = useChatStore((s) => s.sessions)
   const channels = useChannelStore((s) => s.channels)
   const mainModelSelectionMode = useSettingsStore((s) => s.mainModelSelectionMode)
@@ -1064,7 +1127,7 @@ export function ModelSwitcher({
                   'flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left hover:bg-muted/60 transition-colors group',
                   isFollowGlobalActive && 'bg-primary/5'
                 )}
-                onClick={() => selectFollowGlobalModel(setOpen)}
+                onClick={() => selectFollowGlobalModel(activeSessionId, setOpen)}
               >
                 <span className="mt-0.5 flex size-5 items-center justify-center shrink-0">
                   {isFollowGlobalActive ? (
@@ -1105,7 +1168,7 @@ export function ModelSwitcher({
                   'flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left hover:bg-muted/60 transition-colors group',
                   isExplicitAutoActive && 'bg-primary/5'
                 )}
-                onClick={() => selectAutoModel(setOpen)}
+                onClick={() => selectAutoModel(activeSessionId, setOpen)}
               >
                 <span className="mt-0.5 flex size-5 items-center justify-center shrink-0">
                   {isExplicitAutoActive ? (
@@ -1249,7 +1312,7 @@ export function ModelSwitcher({
                                         setActiveFastModel,
                                         setOpen
                                       )
-                                    : selectModel(provider, m.id, setOpen)
+                                    : selectModel(provider, m.id, activeSessionId, setOpen)
                                 }
                               >
                                 <span className="mt-0.5 shrink-0">

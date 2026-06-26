@@ -275,7 +275,7 @@ export interface UnifiedMessage {
   /** Provider-native response ID for follow-up requests such as OpenAI Responses previous_response_id. */
   providerResponseId?: string
   /** Optional source marker for non-manual message insertion paths. */
-  source?: 'team' | 'queued'
+  source?: 'team' | 'queued' | 'quoted'
   /** Persisted auxiliary metadata used by transcript/runtime features. */
   meta?: MessageMeta
   /**
@@ -563,6 +563,8 @@ export interface AIModelConfig {
   enablePromptCache?: boolean
   /** Anthropic: enable system prompt caching */
   enableSystemPromptCache?: boolean
+  /** Anthropic: cache TTL duration — '5m' (default) or '1h' (requires extended-cache-ttl beta) */
+  cacheTtl?: '5m' | '1h'
   /** Optional request overrides applied only to this model */
   requestOverrides?: RequestOverrides
   /** OpenAI-compatible service tier (e.g. priority). Effective when fast mode is enabled. */
@@ -635,6 +637,8 @@ export interface AIProvider {
   websocketUrl?: string
   /** OpenAI Responses transport mode for this provider */
   websocketMode?: 'auto' | 'disabled'
+  /** Anthropic: cache TTL duration — '5m' (default) or '1h'. Model-level overrides provider-level. */
+  cacheTtl?: '5m' | '1h'
 }
 
 // --- Provider Config ---
@@ -682,6 +686,8 @@ export interface ProviderConfig {
   computerUseEnabled?: boolean
   /** Anthropic: enable system prompt caching */
   enableSystemPromptCache?: boolean
+  /** Anthropic: cache TTL duration — '5m' (default) or '1h' (requires extended-cache-ttl beta) */
+  cacheTtl?: '5m' | '1h'
   /** Custom User-Agent header (e.g. Moonshot套餐 requires 'RooCode/3.48.0') */
   userAgent?: string
   /** Optional request overrides (headers/body) for this request */

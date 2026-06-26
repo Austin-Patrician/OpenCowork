@@ -13,18 +13,23 @@ import { normalizeMessagesForAnthropicToolReplay } from '../../../../shared/anth
 import { sanitizeMessagesForToolReplay } from '../tools/tool-input-sanitizer'
 import { calculateCacheReadRatio } from '../agent/cache-shape'
 
-function buildAnthropicCacheControl(): { type: 'ephemeral' } {
-  return { type: 'ephemeral' }
+type AnthropicCacheControl = { type: 'ephemeral'; ttl?: '5m' | '1h' }
+
+function buildAnthropicCacheControl(ttl?: '5m' | '1h'): AnthropicCacheControl {
+  return ttl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' }
 }
 
 const MAX_ANTHROPIC_CACHE_CONTROL_BLOCKS = 4
 
 interface AnthropicCacheControlBudget {
   readonly remaining: number
-  use(): { type: 'ephemeral' } | undefined
+  use(): AnthropicCacheControl | undefined
 }
 
-function createAnthropicCacheControlBudget(enabled: boolean): AnthropicCacheControlBudget {
+function createAnthropicCacheControlBudget(
+  enabled: boolean,
+  ttl?: '5m' | '1h'
+): AnthropicCacheControlBudget {
   let remaining = enabled ? MAX_ANTHROPIC_CACHE_CONTROL_BLOCKS : 0
 
   return {
@@ -34,19 +39,20 @@ function createAnthropicCacheControlBudget(enabled: boolean): AnthropicCacheCont
     use() {
       if (remaining <= 0) return undefined
       remaining -= 1
-      return buildAnthropicCacheControl()
+      return buildAnthropicCacheControl(ttl)
     }
   }
 }
 
 function consumeAnthropicCacheControl(
   budget: AnthropicCacheControlBudget
-): { cache_control: { type: 'ephemeral' } } | Record<string, never> {
+): { cache_control: AnthropicCacheControl } | Record<string, never> {
   const cacheControl = budget.use()
   return cacheControl ? { cache_control: cacheControl } : {}
 }
 
 function isAnthropicCacheableContentBlock(block: ContentBlock): boolean {
+  if (!block || typeof block.type !== 'string') return false
   switch (block.type) {
     case 'text':
       return Boolean(block.text.trim())
@@ -368,10 +374,12 @@ class AnthropicProvider implements APIProvider {
     let outputTokens = 0
     const promptCacheEnabled = config.enablePromptCache !== false
     const systemPromptCacheEnabled = config.enableSystemPromptCache !== false
+    const cacheTtl = config.cacheTtl ?? '5m'
     const thinkingBodyParams = buildAnthropicThinkingBodyParams(config)
     const disabledThinkingBodyParams = buildAnthropicDisabledThinkingBodyParams(config)
     const cacheBudget = createAnthropicCacheControlBudget(
-      promptCacheEnabled || systemPromptCacheEnabled
+      promptCacheEnabled || systemPromptCacheEnabled,
+      cacheTtl
     )
     const system = config.systemPrompt
       ? [
@@ -428,7 +436,9 @@ class AnthropicProvider implements APIProvider {
       'Content-Type': 'application/json',
       'x-api-key': config.apiKey,
       'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'prompt-caching-2024-07-31,interleaved-thinking-2025-05-14'
+      'anthropic-beta': `prompt-caching-2024-07-31,interleaved-thinking-2025-05-14${
+        cacheTtl === '1h' ? ',extended-cache-ttl-2025-04-11' : ''
+      }`
     }
     if (config.userAgent) headers['User-Agent'] = config.userAgent
     const bodyStr = JSON.stringify(body)
@@ -698,66 +708,69 @@ class AnthropicProvider implements APIProvider {
       const blocks = m.content as ContentBlock[]
       return {
         role: m.role === 'tool' ? 'user' : m.role,
-        content: blocks.map((b, blockIndex) => {
-          const shouldCache = cacheTargets.has(`block:${messageIndex}:${blockIndex}`)
-          switch (b.type) {
-            case 'thinking':
-              return {
-                type: 'thinking',
-                thinking: b.thinking,
-                ...(b.encryptedContent &&
-                (b.encryptedContentProvider === 'anthropic' || !b.encryptedContentProvider)
-                  ? { signature: b.encryptedContent }
-                  : {})
-              }
-            case 'text':
-              return {
-                type: 'text',
-                text: b.text,
-                ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
-              }
-            case 'tool_use':
-              return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
-            case 'tool_result': {
-              let formattedContent: unknown = b.content
-              if (Array.isArray(b.content)) {
-                formattedContent = b.content.map((cb) => {
-                  if (cb.type === 'image') {
-                    return {
-                      type: 'image',
-                      source: {
-                        type: cb.source.type,
-                        media_type: cb.source.mediaType,
-                        data: cb.source.data
+        content: blocks
+          .map((b, blockIndex) => {
+            if (!b || typeof (b as ContentBlock)?.type !== 'string') return null
+            const shouldCache = cacheTargets.has(`block:${messageIndex}:${blockIndex}`)
+            switch (b.type) {
+              case 'thinking':
+                return {
+                  type: 'thinking',
+                  thinking: b.thinking,
+                  ...(b.encryptedContent &&
+                  (b.encryptedContentProvider === 'anthropic' || !b.encryptedContentProvider)
+                    ? { signature: b.encryptedContent }
+                    : {})
+                }
+              case 'text':
+                return {
+                  type: 'text',
+                  text: b.text,
+                  ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
+                }
+              case 'tool_use':
+                return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
+              case 'tool_result': {
+                let formattedContent: unknown = b.content
+                if (Array.isArray(b.content)) {
+                  formattedContent = b.content.map((cb) => {
+                    if (cb.type === 'image') {
+                      return {
+                        type: 'image',
+                        source: {
+                          type: cb.source.type,
+                          media_type: cb.source.mediaType,
+                          data: cb.source.data
+                        }
                       }
                     }
-                  }
-                  return cb
-                })
+                    return cb
+                  })
+                }
+                return {
+                  type: 'tool_result',
+                  tool_use_id: b.toolUseId,
+                  content: formattedContent,
+                  ...(b.isError ? { is_error: true } : {}),
+                  ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
+                }
               }
-              return {
-                type: 'tool_result',
-                tool_use_id: b.toolUseId,
-                content: formattedContent,
-                ...(b.isError ? { is_error: true } : {}),
-                ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
-              }
+              case 'image':
+                return {
+                  type: 'image',
+                  source: {
+                    type: b.source.type,
+                    media_type: b.source.mediaType,
+                    data: b.source.data,
+                    ...(b.source.url ? { url: b.source.url } : {})
+                  },
+                  ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
+                }
+              default:
+                return { type: 'text', text: '[unsupported block]' }
             }
-            case 'image':
-              return {
-                type: 'image',
-                source: {
-                  type: b.source.type,
-                  media_type: b.source.mediaType,
-                  data: b.source.data,
-                  ...(b.source.url ? { url: b.source.url } : {})
-                },
-                ...(shouldCache ? consumeAnthropicCacheControl(cacheBudget) : {})
-              }
-            default:
-              return { type: 'text', text: '[unsupported block]' }
-          }
-        })
+          })
+          .filter((b): b is NonNullable<typeof b> => b !== null)
       }
     })
   }

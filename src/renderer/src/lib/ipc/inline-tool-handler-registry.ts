@@ -3,9 +3,9 @@ import type { ToolHandler } from '@renderer/lib/tools/tool-types'
 /**
  * Per-session inline tool handler registry consulted by the renderer tool
  * bridge before falling back to the global `toolRegistry`. This lets callers
- * like the wiki generator attach short-lived tool handlers (e.g.
- * SetWikiStructure) scoped to a single sidecar run without polluting the
- * global registry or requiring sidecar-side knowledge of the handler.
+ * attach short-lived, ad-hoc tool handlers scoped to a single sidecar run
+ * without polluting the global registry or requiring sidecar-side knowledge
+ * of the handler.
  *
  * Keyed by sessionId; each session may have multiple inline handlers, keyed
  * by tool name. Callers must `unregister` when their run completes.

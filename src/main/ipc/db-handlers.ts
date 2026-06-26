@@ -8,7 +8,6 @@ import * as tasksDao from '../db/tasks-dao'
 import * as goalsDao from '../db/goals-dao'
 import * as drawRunsDao from '../db/draw-runs-dao'
 import * as usageEventsDao from '../db/usage-events-dao'
-import * as wikiDao from '../db/wiki-dao'
 import { getGoalRuntimeService } from '../goals/goal-runtime'
 import { emitGoalCleared, emitGoalEventAdded, emitGoalUpdated } from '../goals/goal-sync'
 import { safeSendToAllWindows } from '../window-ipc'
@@ -826,97 +825,4 @@ export function registerDbHandlers(options: RegisterDbHandlersOptions = {}): voi
     tasksDao.deleteTasksBySession(sessionId)
     return { success: true }
   })
-
-  // --- Wiki ---
-
-  ipcMain.handle('db:wiki:list-documents', (_event, projectId: string) => {
-    return wikiDao.listWikiDocuments(projectId)
-  })
-
-  ipcMain.handle('db:wiki:get-document', (_event, id: string) => {
-    return wikiDao.getWikiDocument(id) ?? null
-  })
-
-  ipcMain.handle(
-    'db:wiki:get-document-by-name',
-    (_event, args: { projectId: string; name: string }) => {
-      return wikiDao.getWikiDocumentByName(args.projectId, args.name) ?? null
-    }
-  )
-
-  ipcMain.handle('db:wiki:save-document', (_event, args) => {
-    return wikiDao.saveWikiDocument(args)
-  })
-
-  ipcMain.handle('db:wiki:list-sections', (_event, documentId: string) => {
-    return wikiDao.listWikiSections(documentId)
-  })
-
-  ipcMain.handle(
-    'db:wiki:save-sections',
-    (_event, args: { documentId: string; sections: Array<Record<string, unknown>> }) => {
-      return wikiDao.replaceWikiSections(
-        args.documentId,
-        args.sections as Array<{
-          id?: string
-          title: string
-          anchor: string
-          sortOrder: number
-          summary?: string
-          contentMarkdown?: string
-        }>
-      )
-    }
-  )
-
-  ipcMain.handle('db:wiki:list-section-sources', (_event, sectionId: string) => {
-    return wikiDao.listWikiSectionSources(sectionId)
-  })
-
-  ipcMain.handle(
-    'db:wiki:save-section-sources',
-    (_event, args: { sectionId: string; sources: Array<Record<string, unknown>> }) => {
-      return wikiDao.replaceWikiSectionSources(
-        args.sectionId,
-        args.sources as Array<{
-          id?: string
-          filePath: string
-          symbolHint?: string | null
-          reason?: string
-        }>
-      )
-    }
-  )
-
-  ipcMain.handle('db:wiki:get-project-state', (_event, projectId: string) => {
-    return wikiDao.getWikiProjectState(projectId) ?? null
-  })
-
-  ipcMain.handle(
-    'db:wiki:save-project-state',
-    (_event, args: { projectId: string; patch: Record<string, unknown> }) => {
-      return wikiDao.saveWikiProjectState(args.projectId, args.patch)
-    }
-  )
-
-  ipcMain.handle('db:wiki:clear-project', (_event, projectId: string) => {
-    wikiDao.clearWikiProject(projectId)
-    return { success: true }
-  })
-
-  ipcMain.handle('db:wiki:list-runs', (_event, projectId: string) => {
-    return wikiDao.listWikiGenerationRuns(projectId)
-  })
-
-  ipcMain.handle('db:wiki:create-run', (_event, args) => {
-    return wikiDao.createWikiGenerationRun(args)
-  })
-
-  ipcMain.handle(
-    'db:wiki:update-run',
-    (_event, args: { id: string; patch: Record<string, unknown> }) => {
-      wikiDao.updateWikiGenerationRun(args.id, args.patch)
-      return { success: true }
-    }
-  )
 }

@@ -75,7 +75,11 @@
       "cacheCreate": "创建缓存",
       "output": "输出",
       "tps": "TPS",
-      "ttft": "首 token"
+      "ttft": "首 token",
+      "cost": "{{label}}：{{cost}}",
+      "tpsHint": "每秒生成的输出 Token 数",
+      "ttftHint": "首个 Token 返回耗时",
+      "totalCost": "消费"
     },
     "runtimeStatus": {
       "ready": "就绪",
@@ -128,6 +132,8 @@
     "queueResume": "继续发送",
     "queueEditing": "编辑排队消息",
     "queueQuote": "引用",
+    "queueQuoted": "已插入会话",
+    "queueQuoted": "已插入会话",
     "queueImageCount": "{{count}} 张图片",
     "queueImageOnly": "[仅图片]",
     "slashSuggestions": "命令、插件与技能建议",
@@ -865,6 +871,7 @@
     "copied": "已复制",
     "edit": "编辑",
     "skillLabel": "技能",
+    "quotedLabel": "引导",
     "addSkill": "添加技能",
     "changeSkill": "切换技能",
     "removeSkill": "移除技能",

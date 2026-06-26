@@ -60,7 +60,6 @@ import { registerBrowserHandlers } from './ipc/browser-handlers'
 import { registerOauthHandlers } from './ipc/oauth-handlers'
 import { registerImageGifHandlers } from './ipc/image-gif-handlers'
 import { registerGitHandlers } from './ipc/git-handlers'
-import { registerWikiHandlers } from './ipc/wiki-handlers'
 import { registerMigrationHandlers } from './ipc/migration-handlers'
 import { registerSyncHandlers } from './ipc/sync-handlers'
 import { registerSidecarHandlers, getSidecarManager } from './ipc/sidecar-manager'
@@ -1141,7 +1140,6 @@ if (gotSingleInstanceLock) {
     registerOauthHandlers()
     registerImageGifHandlers()
     registerGitHandlers()
-    registerWikiHandlers()
     registerMigrationHandlers()
     registerSyncHandlers()
     registerSidecarHandlers()

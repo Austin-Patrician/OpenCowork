@@ -300,6 +300,7 @@ interface AIModelConfig {
   responseSummary?: 'auto' | 'concise' | 'detailed'
   enablePromptCache?: boolean
   enableSystemPromptCache?: boolean
+  cacheTtl?: '5m' | '1h'
   serviceTier?: string
   websocketUrl?: string
   websocketMode?: ResponsesWebsocketMode
@@ -324,6 +325,7 @@ interface AIProviderConfigRecord {
   authMode?: string
   websocketUrl?: string
   websocketMode?: ResponsesWebsocketMode
+  cacheTtl?: '5m' | '1h'
   oauth?: {
     accountId?: string
   }
@@ -355,6 +357,7 @@ interface ProviderConfig {
   responseSummary?: 'auto' | 'concise' | 'detailed'
   enablePromptCache?: boolean
   enableSystemPromptCache?: boolean
+  cacheTtl?: '5m' | '1h'
   userAgent?: string
   requestOverrides?: RequestOverrides
   instructionsPrompt?: string
@@ -1440,6 +1443,7 @@ function buildProviderConfigById(
     ...(model?.enableSystemPromptCache !== undefined
       ? { enableSystemPromptCache: model.enableSystemPromptCache }
       : {}),
+    cacheTtl: model?.cacheTtl ?? provider.cacheTtl,
     ...(model?.serviceTier ? { serviceTier: model.serviceTier } : {}),
     ...(websocketUrl ? { websocketUrl } : {}),
     ...(websocketMode ? { websocketMode } : {}),
@@ -2184,18 +2188,23 @@ function formatOpenAIResponsesTools(tools: ToolDefinition[]): unknown[] {
   }))
 }
 
-function buildAnthropicCacheControl(): { type: 'ephemeral' } {
-  return { type: 'ephemeral' }
+type AnthropicCacheControl = { type: 'ephemeral'; ttl?: '5m' | '1h' }
+
+function buildAnthropicCacheControl(ttl?: '5m' | '1h'): AnthropicCacheControl {
+  return ttl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' }
 }
 
 const MAX_ANTHROPIC_CACHE_CONTROL_BLOCKS = 4
 
 interface AnthropicCacheControlBudget {
   readonly remaining: number
-  use(): { type: 'ephemeral' } | undefined
+  use(): AnthropicCacheControl | undefined
 }
 
-function createAnthropicCacheControlBudget(enabled: boolean): AnthropicCacheControlBudget {
+function createAnthropicCacheControlBudget(
+  enabled: boolean,
+  ttl?: '5m' | '1h'
+): AnthropicCacheControlBudget {
   let remaining = enabled ? MAX_ANTHROPIC_CACHE_CONTROL_BLOCKS : 0
 
   return {
@@ -2205,14 +2214,14 @@ function createAnthropicCacheControlBudget(enabled: boolean): AnthropicCacheCont
     use() {
       if (remaining <= 0) return undefined
       remaining -= 1
-      return buildAnthropicCacheControl()
+      return buildAnthropicCacheControl(ttl)
     }
   }
 }
 
 function consumeAnthropicCacheControl(
   budget: AnthropicCacheControlBudget
-): { cache_control: { type: 'ephemeral' } } | Record<string, never> {
+): { cache_control: AnthropicCacheControl } | Record<string, never> {
   const cacheControl = budget.use()
   return cacheControl ? { cache_control: cacheControl } : {}
 }
@@ -3099,6 +3108,7 @@ async function* sendAnthropic(
   let outputTokens = 0
   const promptCacheEnabled = config.enablePromptCache !== false
   const systemPromptCacheEnabled = config.enableSystemPromptCache !== false
+  const cacheTtl = config.cacheTtl ?? '5m'
   const thinkingBodyParams = buildAnthropicThinkingBodyParams(config)
   const disabledThinkingBodyParams = buildAnthropicDisabledThinkingBodyParams(config)
   const resolveAnthropicEffort = (): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined => {
@@ -3138,7 +3148,8 @@ async function* sendAnthropic(
   const baseUrl = (config.baseUrl || 'https://api.anthropic.com').trim().replace(/\/+$/, '')
   const url = `${baseUrl}/v1/messages`
   const cacheBudget = createAnthropicCacheControlBudget(
-    promptCacheEnabled || systemPromptCacheEnabled
+    promptCacheEnabled || systemPromptCacheEnabled,
+    cacheTtl
   )
   const system = formatAnthropicSystemPrompt(
     config.systemPrompt,
@@ -3211,7 +3222,9 @@ async function* sendAnthropic(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'anthropic-version': '2023-06-01',
-    'anthropic-beta': 'prompt-caching-2024-07-31,interleaved-thinking-2025-05-14',
+    'anthropic-beta': `prompt-caching-2024-07-31,interleaved-thinking-2025-05-14${
+      cacheTtl === '1h' ? ',extended-cache-ttl-2025-04-11' : ''
+    }`,
     'x-api-key': config.apiKey
   }
   if (config.userAgent) headers['User-Agent'] = config.userAgent
@@ -5013,6 +5026,10 @@ async function* runAgentLoop(
           return
         }
       }
+    }
+    if (config.signal.aborted) {
+      yield buildLoopEndEvent('aborted')
+      return
     }
     const assistantMsg: UnifiedMessage = {
       id: nanoid(),

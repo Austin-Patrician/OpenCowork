@@ -4,6 +4,7 @@ import {
   formatCacheHitRate,
   getBillableInputTokens,
   getBillableTotalTokens,
+  getCacheCreationTokens,
   getCacheHitRate
 } from '../format-tokens'
 import { parseSystemCommandTag } from '../commands/system-command'
@@ -103,7 +104,11 @@ export function sessionToMarkdown(session: Session): string {
       const extras: string[] = []
       const billableInput = getBillableInputTokens(msg.usage)
       if (msg.usage.cacheReadTokens) {
-        const cacheTokenShare = getCacheHitRate(billableInput, msg.usage.cacheReadTokens)
+        const cacheTokenShare = getCacheHitRate(
+          billableInput,
+          msg.usage.cacheReadTokens,
+          getCacheCreationTokens(msg.usage)
+        )
         extras.push(`${msg.usage.cacheReadTokens} cached`)
         extras.push(`${formatCacheHitRate(cacheTokenShare)} cached token share`)
       }
@@ -134,7 +139,7 @@ export function sessionToMarkdown(session: Session): string {
     lines.push('')
     const totalExtras: string[] = []
     if (totals.cacheRead > 0) {
-      const cacheTokenShare = getCacheHitRate(totals.input, totals.cacheRead)
+      const cacheTokenShare = getCacheHitRate(totals.input, totals.cacheRead, totals.cacheCreation)
       totalExtras.push(`${totals.cacheRead} cache read`)
       totalExtras.push(`${formatCacheHitRate(cacheTokenShare)} cached token share`)
     }

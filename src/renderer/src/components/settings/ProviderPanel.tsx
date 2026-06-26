@@ -610,6 +610,7 @@ function ModelFormDialog({
   const [enableSystemPromptCache, setEnableSystemPromptCache] = useState(
     initial?.enableSystemPromptCache ?? true
   )
+  const [cacheTtl, setCacheTtl] = useState<'5m' | '1h'>(initial?.cacheTtl ?? '5m')
   const [responsesImageGenerationEnabled, setResponsesImageGenerationEnabled] = useState(
     initial?.responsesImageGeneration?.enabled ?? true
   )
@@ -669,6 +670,7 @@ function ModelFormDialog({
     setResponseSummary(model.responseSummary ?? 'none')
     setWebsocketMode(model.websocketMode ?? 'auto')
     setEnableSystemPromptCache(model.enableSystemPromptCache ?? true)
+    setCacheTtl(model.cacheTtl ?? '5m')
     setResponsesImageGenerationEnabled(model.responsesImageGeneration?.enabled ?? true)
     setResponsesImageGenerationAction(toOptionalSelectValue(model.responsesImageGeneration?.action))
     setResponsesImageGenerationBackground(
@@ -706,6 +708,7 @@ function ModelFormDialog({
 
   const requestType = typeOverride === 'none' ? providerType : typeOverride
   const isResponsesModel = requestType === 'openai-responses'
+  const isAnthropicModel = requestType === 'anthropic'
   const handleSave = (): void => {
     const modelId = id.trim()
     if (!modelId) return
@@ -788,6 +791,7 @@ function ModelFormDialog({
     if (responseSummary && responseSummary !== 'none') model.responseSummary = responseSummary
     else delete model.responseSummary
     model.enableSystemPromptCache = enableSystemPromptCache
+    model.cacheTtl = cacheTtl
     if (isResponsesModel) {
       model.websocketMode = websocketMode
       const outputCompression = responsesImageGenerationOutputCompression.trim()
@@ -1458,6 +1462,20 @@ function ModelFormDialog({
                   onCheckedChange={setEnableSystemPromptCache}
                 />
               </div>
+              {isAnthropicModel && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">{t('provider.cacheTtl')}</span>
+                  <Select value={cacheTtl} onValueChange={(v) => setCacheTtl(v as '5m' | '1h')}>
+                    <SelectTrigger className="w-20 h-7 text-[11px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5m">5m</SelectItem>
+                      <SelectItem value="1h">1h</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -3098,6 +3116,26 @@ function ProviderConfigPanel({ provider }: { provider: AIProvider }): React.JSX.
                 </SelectItem>
               </SelectContent>
             </Select>
+          </section>
+        )}
+
+        {/* Anthropic cache TTL (provider-level default; model-level overrides) */}
+        {provider.type === 'anthropic' && (
+          <section className="space-y-2 mt-5">
+            <label className="text-sm font-medium">{t('provider.cacheTtl')}</label>
+            <Select
+              value={provider.cacheTtl ?? '5m'}
+              onValueChange={(v) => updateProvider(provider.id, { cacheTtl: v as '5m' | '1h' })}
+            >
+              <SelectTrigger className="w-24 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5m">5m</SelectItem>
+                <SelectItem value="1h">1h</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">{t('provider.cacheTtlHint')}</p>
           </section>
         )}
 

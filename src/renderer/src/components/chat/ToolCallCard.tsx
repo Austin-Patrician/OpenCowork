@@ -28,7 +28,6 @@ import {
   LogOut,
   HelpCircle,
   Code2,
-  BookOpen,
   Folder,
   File,
   Clock,
@@ -2699,8 +2698,6 @@ const COMPACT_BUILTIN_TOOL_NAMES = new Set([
   'TaskUpdate',
   'WebFetch',
   'WebSearch',
-  'WikiGetDocumentByName',
-  'WikiListDocuments',
   'Write',
   'create_goal',
   'get_goal',
@@ -2844,7 +2841,6 @@ function getBuiltinToolIcon(name: string): React.ReactNode {
   if (name === 'Skill') return <FileText className="size-3.5" />
   if (name.endsWith('goal')) return <Target className="size-3.5" />
   if (name.startsWith('Memory')) return <Database className="size-3.5" />
-  if (name.startsWith('Wiki')) return <BookOpen className="size-3.5" />
   return <Box className="size-3.5" />
 }
 
@@ -2856,7 +2852,6 @@ function getToolNamespace(name: string): string {
   if (name.startsWith('Task')) return 'tasks'
   if (name.startsWith('Cron')) return 'cron'
   if (name.startsWith('Memory')) return 'memory'
-  if (name.startsWith('Wiki')) return 'wiki'
   if (name.endsWith('goal')) return 'goal'
   if (name === 'visualize_show_widget') return 'widget'
   if (name === 'Notify') return 'notify'
@@ -3102,9 +3097,7 @@ function buildCompactToolHeaderModel({
       'update_goal',
       'MemoryList',
       'MemoryRead',
-      'MemorySearch',
-      'WikiListDocuments',
-      'WikiGetDocumentByName'
+      'MemorySearch'
     ].includes(name)
   ) {
     const primary = firstStringInput(input, [

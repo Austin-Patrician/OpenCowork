@@ -230,6 +230,18 @@ function buildTailToolExecutionState(messages: UnifiedMessage[]): TailToolExecut
   )
   if (toolUseBlocks.length === 0) return null
 
+  // If the model produced a final text response after its last tool call, the
+  // turn is already complete and there is nothing to continue.
+  const lastToolUseIndex = assistantMessage.content.reduce(
+    (last, block, index) => (block.type === 'tool_use' ? index : last),
+    -1
+  )
+  const hasTrailingText = assistantMessage.content.some(
+    (block, index) =>
+      index > lastToolUseIndex && block.type === 'text' && block.text.trim().length > 0
+  )
+  if (hasTrailingText) return null
+
   return {
     assistantIndex,
     assistantMessageId: assistantMessage.id,

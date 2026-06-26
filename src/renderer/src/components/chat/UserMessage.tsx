@@ -29,7 +29,8 @@ import {
   Sparkles,
   Loader2,
   FileText,
-  AlertCircle
+  AlertCircle,
+  CornerDownRight
 } from 'lucide-react'
 import { formatTokens } from '@renderer/lib/format-tokens'
 import { useMemoizedTokens } from '@renderer/hooks/use-estimated-tokens'
@@ -41,7 +42,8 @@ import type {
   AIModelConfig,
   ContentBlock,
   MessageMeta,
-  SelectedFileReadsMeta
+  SelectedFileReadsMeta,
+  UnifiedMessage
 } from '@renderer/lib/api/types'
 import {
   ACCEPTED_IMAGE_TYPES,
@@ -64,6 +66,7 @@ interface UserMessageProps {
   messageId: string
   content: string | ContentBlock[]
   meta?: MessageMeta
+  source?: UnifiedMessage['source']
   isLast?: boolean
   onEdit?: (messageId: string, draft: EditableUserMessageDraft) => void
   onDelete?: (messageId: string) => void
@@ -420,6 +423,7 @@ export function UserMessage({
   messageId,
   content,
   meta,
+  source,
   onEdit,
   onDelete
 }: UserMessageProps): React.JSX.Element {
@@ -595,6 +599,14 @@ export function UserMessage({
   return (
     <div className="group/user flex flex-col items-end">
       <div className={USER_MESSAGE_WIDTH_CLASS}>
+        {!editing && source === 'quoted' && (
+          <div className="mb-1 flex justify-end pr-1">
+            <span className="inline-flex items-center gap-1 text-[11px] leading-none text-muted-foreground/70">
+              <CornerDownRight className="size-3" />
+              {t('userMessage.quotedLabel', { defaultValue: 'Quoted' })}
+            </span>
+          </div>
+        )}
         {editing ? (
           <div className={`${USER_MESSAGE_BUBBLE_CLASS} space-y-2`}>
             {command && (

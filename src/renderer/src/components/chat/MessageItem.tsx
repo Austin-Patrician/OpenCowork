@@ -144,6 +144,7 @@ function MessageItemInner({
             messageId={message.id}
             content={message.content}
             meta={message.meta}
+            source={message.source}
             isLast={isLastUserMessage}
             onEdit={onEditUserMessage}
             onDelete={onDeleteMessage}

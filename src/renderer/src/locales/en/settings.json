@@ -1073,6 +1073,8 @@
     },
     "promptCache": "Prompt cache (responses)",
     "systemPromptCache": "System prompt cache (anthropic)",
+    "cacheTtl": "Cache TTL (anthropic)",
+    "cacheTtlHint": "5m (default) or 1h (2x write cost). Model-level overrides provider-level.",
     "capabilities": "Capabilities",
     "supportsVision": "Supports vision (image input)",
     "supportsFunctionCall": "Supports function calling",

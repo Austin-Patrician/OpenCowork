@@ -209,6 +209,7 @@ import type { AgentStreamEvent } from '../../../shared/agent-stream-protocol'
 /** Per-session abort controllers — module-level so concurrent sessions don't overwrite each other */
 const sessionAbortControllers = new Map<string, AbortController>()
 const sessionSidecarRunIds = new Map<string, string>()
+const stopAfterCurrentRequestSessions = new Set<string>()
 const continuingToolExecutionSessions = new Set<string>()
 const pendingGoalContinuationSessions = new Set<string>()
 const scheduledGoalContinuationSessions = new Set<string>()
@@ -300,7 +301,6 @@ function addMessageWithSync(sessionId: string, message: UnifiedMessage): void {
   useChatStore.getState().addMessage(sessionId, message)
   emitSessionRuntimeSync({ kind: 'add_message', sessionId, message })
 }
-void addMessageWithSync
 
 function setStreamingMessageIdWithSync(sessionId: string, messageId: string | null): void {
   if (messageId === null) {
@@ -402,7 +402,7 @@ function summarizeActiveTeamForPromptCache(activeTeam: ActiveTeam | null | undef
   }
 }
 
-type MessageSource = 'team' | 'queued' | 'continue'
+type MessageSource = 'team' | 'queued' | 'continue' | 'quoted'
 type PendingSessionDispatchMode = 'after_loop' | 'interrupt_next'
 const SELECTED_FILE_READ_MAX_LINES = 1_000
 
@@ -414,6 +414,12 @@ export interface SendMessageOptions {
   enablePlanMode?: boolean
   goalObjective?: string
   selectedFileReferences?: SelectedFileReference[]
+  /**
+   * When set, the user message has already been appended to the transcript
+   * (e.g. via the quote action) and sendMessage should run the agent loop
+   * against it without inserting a duplicate user message.
+   */
+  preRenderedUserMessageId?: string
   imageEdit?: {
     maskDataUrl?: string
   }
@@ -1417,6 +1423,7 @@ function buildProviderConfigWithRuntimeSettings(
     enablePromptCache: modelConfig?.enablePromptCache ?? providerConfig.enablePromptCache,
     enableSystemPromptCache:
       modelConfig?.enableSystemPromptCache ?? providerConfig.enableSystemPromptCache,
+    cacheTtl: modelConfig?.cacheTtl ?? providerConfig.cacheTtl,
     sessionId
   }
 }
@@ -1551,6 +1558,11 @@ function setPendingSessionDispatchPaused(sessionId: string, paused: boolean): vo
   notifyPendingSessionMessageListeners()
 }
 
+function isHiddenFromQueueView(msg: QueuedSessionMessage): boolean {
+  // Quoted messages are already rendered; keep their process-only queue entry hidden.
+  return !!msg.options?.preRenderedUserMessageId
+}
+
 function replaceSessionPendingMessages(sessionId: string, next: QueuedSessionMessage[]): void {
   if (next.length === 0) {
     pendingSessionMessages.delete(sessionId)
@@ -1558,7 +1570,12 @@ function replaceSessionPendingMessages(sessionId: string, next: QueuedSessionMes
     pausedPendingSessionDispatch.delete(sessionId)
   } else {
     pendingSessionMessages.set(sessionId, next)
-    pendingSessionMessageViews.set(sessionId, next.map(toPendingItem))
+    const views = next.filter((msg) => !isHiddenFromQueueView(msg)).map(toPendingItem)
+    if (views.length === 0) {
+      pendingSessionMessageViews.delete(sessionId)
+    } else {
+      pendingSessionMessageViews.set(sessionId, views)
+    }
   }
   notifyPendingSessionMessageListeners()
 }
@@ -1682,6 +1699,21 @@ export function hasActiveSessionRunForSession(sessionId: string): boolean {
   return hasActiveSessionRun(sessionId)
 }
 
+function requestStopAfterCurrentRequest(sessionId: string): boolean {
+  if (!hasActiveSessionRun(sessionId)) return false
+  stopAfterCurrentRequestSessions.add(sessionId)
+  return true
+}
+
+function stopActiveRunAfterCurrentRequest(sessionId: string): void {
+  if (!stopAfterCurrentRequestSessions.delete(sessionId)) return
+  const activeAbortController = sessionAbortControllers.get(sessionId)
+  if (activeAbortController && !activeAbortController.signal.aborted) {
+    activeAbortController.abort()
+  }
+  void cancelSidecarRun(sessionId)
+}
+
 export function promotePendingSessionMessageForImmediateDispatch(
   sessionId: string,
   messageId: string
@@ -1696,12 +1728,84 @@ export function promotePendingSessionMessageForImmediateDispatch(
     ...queue[index],
     dispatchMode: 'interrupt_next'
   }
+  // Move the quoted message to the head so it is the next one dispatched, while
+  // preserving the relative order of the remaining queued messages.
   const next = [promoted, ...queue.slice(0, index), ...queue.slice(index + 1)]
 
   replaceSessionPendingMessages(sessionId, next)
   setPendingSessionDispatchPaused(sessionId, false)
 
-  if (!hasActiveSessionRun(sessionId)) {
+  if (hasActiveSessionRun(sessionId)) {
+    // Interrupt the in-flight run immediately so the quoted message is inserted
+    // into the conversation right away instead of waiting for the next turn
+    // boundary. On run completion, dispatchNextQueuedMessage picks up the head.
+    queueMicrotask(() => {
+      const activeAbortController = sessionAbortControllers.get(sessionId)
+      if (activeAbortController && !activeAbortController.signal.aborted) {
+        activeAbortController.abort()
+      }
+      void cancelSidecarRun(sessionId)
+    })
+  } else {
+    dispatchNextQueuedMessage(sessionId)
+  }
+
+  return true
+}
+
+export function quotePendingSessionMessageIntoConversation(
+  sessionId: string,
+  messageId: string
+): boolean {
+  const queue = pendingSessionMessages.get(sessionId)
+  if (!queue || queue.length === 0) return false
+
+  const index = queue.findIndex((msg) => msg.id === messageId)
+  if (index < 0) return false
+
+  const target = queue[index]
+  const hasImages = !!target.images && target.images.length > 0
+  const trimmedText = target.text.trim()
+  if (!trimmedText && !hasImages && !target.command) return false
+
+  // Render immediately; process after the current provider request finishes.
+  const textBlocks: Array<Extract<ContentBlock, { type: 'text' }>> = []
+  if (target.command) {
+    textBlocks.push({ type: 'text', text: serializeSystemCommand(target.command) })
+  }
+  if (target.text) {
+    textBlocks.push({ type: 'text', text: target.text })
+  }
+  let userContent: string | ContentBlock[]
+  if (hasImages) {
+    userContent = [...textBlocks, ...(target.images ?? []).map(imageAttachmentToContentBlock)]
+  } else if (textBlocks.length === 1 && textBlocks[0]?.type === 'text') {
+    userContent = textBlocks[0].text
+  } else {
+    userContent = textBlocks
+  }
+
+  const userMsg: UnifiedMessage = {
+    id: nanoid(),
+    role: 'user',
+    content: userContent,
+    createdAt: Date.now(),
+    source: 'quoted'
+  }
+  addMessageWithSync(sessionId, userMsg)
+
+  const remaining = [...queue.slice(0, index), ...queue.slice(index + 1)]
+  const processOnly: QueuedSessionMessage = {
+    ...target,
+    source: 'quoted',
+    dispatchMode: 'after_loop',
+    options: { ...(target.options ?? {}), preRenderedUserMessageId: userMsg.id }
+  }
+
+  replaceSessionPendingMessages(sessionId, [processOnly, ...remaining])
+  setPendingSessionDispatchPaused(sessionId, false)
+
+  if (!requestStopAfterCurrentRequest(sessionId)) {
     dispatchNextQueuedMessage(sessionId)
   }
 
@@ -2546,6 +2650,7 @@ function abortTeamForSession(sessionId: string, clearPendingApprovals = false): 
 function finishStoppingSession(sessionId: string): void {
   setPendingSessionDispatchPaused(sessionId, true)
   clearGoalContinuationState(sessionId)
+  stopAfterCurrentRequestSessions.delete(sessionId)
 
   const ac = sessionAbortControllers.get(sessionId)
   if (ac) {
@@ -3552,8 +3657,11 @@ export function useChatActions(): {
 
         const sessionSnapshot = useChatStore.getState().sessions.find((s) => s.id === sessionId)
         const sessionMode = sessionSnapshot?.mode ?? uiStore.mode
+        // A quoted message is already rendered in the transcript; skip re-inserting it.
+        const preRenderedUserMessageId = options?.preRenderedUserMessageId
+        const shouldAppendUserMessage = source !== 'continue' && !preRenderedUserMessageId
         const selectedFileReadContext =
-          source !== 'continue' && source !== 'team'
+          shouldAppendUserMessage && source !== 'team'
             ? await buildSelectedFileReadContext({
                 text: effectiveResolvedCommand.userText || text,
                 options,
@@ -3563,7 +3671,6 @@ export function useChatActions(): {
 
         // Add user message (multi-modal when images attached)
         const isQueuedInsertion = source === 'queued'
-        const shouldAppendUserMessage = source !== 'continue'
         let expectedUserRequestMessage: UnifiedMessage | null = null
         if (shouldAppendUserMessage) {
           let userContent: string | ContentBlock[]
@@ -3825,6 +3932,7 @@ export function useChatActions(): {
             agentStore.setSessionStatus(sessionId, 'completed')
             sessionAbortControllers.delete(sessionId)
             sessionSidecarRunIds.delete(sessionId)
+            stopAfterCurrentRequestSessions.delete(sessionId)
             if (sessionScope === 'main' && !abortController.signal.aborted) {
               void runMemoryAutomationForSession({
                 sessionId,
@@ -5169,6 +5277,7 @@ export function useChatActions(): {
                         : undefined
                     })
                   }
+                  stopActiveRunAfterCurrentRequest(sessionId!)
                   break
                 }
 
@@ -5403,12 +5512,18 @@ export function useChatActions(): {
                 ...(sessionToolCalls?.executed ?? []),
                 ...(sessionToolCalls?.pending ?? [])
               ]) {
-                if (tc.status === 'streaming') {
+                if (
+                  tc.status === 'streaming' ||
+                  (abortController.signal.aborted && tc.status === 'running' && !tc.completedAt)
+                ) {
                   updateToolCall(
                     tc.id,
                     {
                       status: 'error',
-                      error: 'Tool call stream ended before execution',
+                      error:
+                        tc.status === 'streaming'
+                          ? 'Tool call stream ended before execution'
+                          : 'Tool call stopped before execution',
                       completedAt: Date.now()
                     },
                     sessionId
@@ -5423,6 +5538,7 @@ export function useChatActions(): {
             setStreamingMessageIdWithSync(sessionId, null)
             sessionAbortControllers.delete(sessionId)
             sessionSidecarRunIds.delete(sessionId)
+            stopAfterCurrentRequestSessions.delete(sessionId)
             // Derive global isRunning from remaining running sessions
             const hasOtherRunning = Object.values(useAgentStore.getState().runningSessions).some(
               (s) => s === 'running' || s === 'retrying'

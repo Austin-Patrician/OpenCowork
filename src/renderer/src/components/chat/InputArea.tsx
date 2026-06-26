@@ -41,6 +41,7 @@ import {
 import { Textarea } from '@renderer/components/ui/textarea'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@renderer/components/ui/hover-card'
 import { useProviderStore, modelSupportsVision } from '@renderer/stores/provider-store'
 import type {
   AIModelConfig,
@@ -53,8 +54,11 @@ import { useSettingsStore } from '@renderer/stores/settings-store'
 import { updateWebSearchToolRegistration } from '@renderer/lib/tools'
 import { useUIStore, type AppMode } from '@renderer/stores/ui-store'
 import {
+  calculateCost,
+  calculateCostBreakdown,
   estimateTokens,
   formatCacheHitRate,
+  formatCost,
   formatTokens,
   getBillableInputTokens,
   getCacheCreationTokens,
@@ -131,7 +135,7 @@ import {
   dispatchNextQueuedMessageForSession,
   getPendingSessionMessages,
   isPendingSessionDispatchPaused,
-  promotePendingSessionMessageForImmediateDispatch,
+  quotePendingSessionMessageIntoConversation,
   removePendingSessionMessage,
   subscribePendingSessionMessages,
   updatePendingSessionMessageDraft,
@@ -450,6 +454,11 @@ interface RuntimeUsageTotals {
   billableInputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+  inputCost: number | null
+  outputCost: number | null
+  cacheReadCost: number | null
+  cacheCreationCost: number | null
+  totalCost: number | null
   latestRequestTiming: RequestTiming | null
 }
 
@@ -488,6 +497,11 @@ function formatRuntimeTtft(ms: number): string {
   return formatDurationMs(ms)
 }
 
+function sumNullableCost(current: number | null, next: number | null): number | null {
+  if (next == null) return current
+  return (current ?? 0) + next
+}
+
 function createEmptyRuntimeUsageTotals(): RuntimeUsageTotals {
   return {
     inputTokens: 0,
@@ -495,6 +509,11 @@ function createEmptyRuntimeUsageTotals(): RuntimeUsageTotals {
     billableInputTokens: 0,
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
+    inputCost: null,
+    outputCost: null,
+    cacheReadCost: null,
+    cacheCreationCost: null,
+    totalCost: null,
     latestRequestTiming: null
   }
 }
@@ -503,7 +522,11 @@ function getBillableInputForUsage(usage: TokenUsage): number {
   return normalizeTokenCount(getBillableInputTokens(usage))
 }
 
-function addUsageToTotals(totals: RuntimeUsageTotals, usage: TokenUsage | undefined): void {
+function addUsageToTotals(
+  totals: RuntimeUsageTotals,
+  usage: TokenUsage | undefined,
+  modelCfg: import('@renderer/lib/api/types').AIModelConfig | null | undefined
+): void {
   if (!usage) return
   totals.inputTokens += normalizeTokenCount(usage.inputTokens)
   totals.outputTokens += normalizeTokenCount(usage.outputTokens)
@@ -511,6 +534,20 @@ function addUsageToTotals(totals: RuntimeUsageTotals, usage: TokenUsage | undefi
   totals.cacheReadTokens += normalizeTokenCount(usage.cacheReadTokens)
   totals.cacheCreationTokens += normalizeTokenCount(getCacheCreationTokens(usage))
   totals.latestRequestTiming = getLatestRequestTiming(usage) ?? totals.latestRequestTiming
+
+  const costBreakdown = calculateCostBreakdown(usage, modelCfg)
+  totals.inputCost = sumNullableCost(totals.inputCost, costBreakdown.inputCost)
+  totals.outputCost = sumNullableCost(totals.outputCost, costBreakdown.outputCost)
+  totals.cacheReadCost = sumNullableCost(totals.cacheReadCost, costBreakdown.cacheReadCost)
+  totals.cacheCreationCost = sumNullableCost(
+    totals.cacheCreationCost,
+    costBreakdown.cacheCreationCost
+  )
+
+  const msgCost = calculateCost(usage, modelCfg)
+  if (msgCost !== null) {
+    totals.totalCost = (totals.totalCost ?? 0) + msgCost
+  }
 }
 
 function collectRuntimeOutputSnapshot(
@@ -595,13 +632,37 @@ const metricToneClasses: Record<RuntimeMetricTone, string> = {
   latency: 'text-rose-500/80 dark:text-rose-300/80'
 }
 
+function MetricHoverTip({
+  label,
+  children
+}: {
+  label?: string
+  children: React.ReactElement
+}): React.JSX.Element {
+  if (!label) return children
+  return (
+    <HoverCard openDelay={180} closeDelay={100}>
+      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      <HoverCardContent
+        side="top"
+        align="center"
+        sideOffset={6}
+        className="w-auto max-w-[260px] px-2.5 py-1.5 text-[11px] leading-snug"
+      >
+        {label}
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
 function RuntimeMetric({
   label,
   value,
   tone,
   animate = true,
   duration = 600,
-  suffix
+  suffix,
+  title
 }: {
   label: string
   value: number
@@ -609,9 +670,10 @@ function RuntimeMetric({
   animate?: boolean
   duration?: number
   suffix?: string
+  title?: string
 }): React.JSX.Element {
-  return (
-    <span className="shrink-0">
+  const body = (
+    <span className={cn('shrink-0', title && 'cursor-help')}>
       <span className="text-muted-foreground/60">{label}</span>{' '}
       <span className={cn('tabular-nums font-medium', metricToneClasses[tone])}>
         <SmoothTokenNumber value={value} animate={animate} duration={duration} />
@@ -619,6 +681,7 @@ function RuntimeMetric({
       {suffix && <span className="ml-0.5 tabular-nums text-muted-foreground/50">{suffix}</span>}
     </span>
   )
+  return <MetricHoverTip label={title}>{body}</MetricHoverTip>
 }
 
 function RuntimeTextMetric({
@@ -642,17 +705,14 @@ function RuntimeTextMetric({
       </span>
       {suffix && <span className="ml-0.5 tabular-nums text-muted-foreground/50">{suffix}</span>}
       {hint ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <MetricHoverTip label={hint}>
+          <span className="inline-flex items-center">
             <CircleHelp
-              className="size-3 shrink-0 text-muted-foreground/50 hover:text-muted-foreground"
+              className="size-3 shrink-0 cursor-help text-muted-foreground/50 hover:text-muted-foreground"
               aria-label={hint}
             />
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-[220px] text-xs">
-            {hint}
-          </TooltipContent>
-        </Tooltip>
+          </span>
+        </MetricHoverTip>
       ) : null}
     </span>
   )
@@ -666,6 +726,7 @@ interface ComposerRuntimeStatusProps {
   pendingImageReads?: number
   contextCompressionStatus: ContextCompressionStatus
   contextCompressionStatusLabel: string
+  model?: AIModelConfig | null
   className?: string
 }
 
@@ -677,6 +738,7 @@ function ComposerRuntimeStatus({
   pendingImageReads = 0,
   contextCompressionStatus,
   contextCompressionStatusLabel,
+  model,
   className
 }: ComposerRuntimeStatusProps): React.JSX.Element {
   const { t } = useTranslation('chat')
@@ -692,8 +754,20 @@ function ComposerRuntimeStatus({
           : undefined
       const messages = idx !== undefined ? s.sessions[idx]?.messages : undefined
       if (messages) {
+        const { providers } = useProviderStore.getState()
         for (const item of messages) {
-          addUsageToTotals(totals, item.usage)
+          const reqModel = item.meta?.requestModel
+          const providerId = reqModel?.providerId ?? item.debugInfo?.providerId ?? null
+          const modelId = reqModel?.modelId ?? item.debugInfo?.model ?? model?.id ?? null
+          const provider = providerId ? (providers.find((p) => p.id === providerId) ?? null) : null
+          const msgModelCfg =
+            (provider && modelId
+              ? (provider.models.find((m) => m.id === modelId) ?? null)
+              : null) ??
+            (model && modelId === model.id ? model : null) ??
+            model ??
+            null
+          addUsageToTotals(totals, item.usage, msgModelCfg)
         }
       }
       const messageIndex =
@@ -724,6 +798,11 @@ function ComposerRuntimeStatus({
         cumulativeBillableInputTokens: totals.billableInputTokens,
         cumulativeCacheReadTokens: totals.cacheReadTokens,
         cumulativeCacheCreationTokens: totals.cacheCreationTokens,
+        cumulativeInputCost: totals.inputCost,
+        cumulativeOutputCost: totals.outputCost,
+        cumulativeCacheReadCost: totals.cacheReadCost,
+        cumulativeCacheCreationCost: totals.cacheCreationCost,
+        cumulativeTotalCost: totals.totalCost,
         latestRequestTiming: totals.latestRequestTiming,
         isGeneratingImage: streamingMessageId
           ? Boolean(s.generatingImageMessages[streamingMessageId])
@@ -789,7 +868,72 @@ function ComposerRuntimeStatus({
     (isStreaming ? Math.max(0, estimatedOutputTokens - live.currentOutputTokens) : 0)
   const cacheReadTokens = live.cumulativeCacheReadTokens
   const cacheCreationTokens = live.cumulativeCacheCreationTokens
-  const cacheHitRate = getCacheHitRate(inputTokens, cacheReadTokens)
+  const cacheHitRate = getCacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens)
+  const streamingExtraUsage = React.useMemo<TokenUsage | null>(() => {
+    if (!isStreaming || !model) return null
+    const estimatedBillableInputTokens =
+      live.currentInputTokens === 0 ? currentEstimatedInputTokens : 0
+    const estimatedOutputDelta = Math.max(0, estimatedOutputTokens - live.currentOutputTokens)
+    if (estimatedBillableInputTokens <= 0 && estimatedOutputDelta <= 0) return null
+    return {
+      inputTokens: estimatedBillableInputTokens,
+      billableInputTokens: estimatedBillableInputTokens,
+      outputTokens: estimatedOutputDelta,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0
+    }
+  }, [
+    currentEstimatedInputTokens,
+    estimatedOutputTokens,
+    isStreaming,
+    live.currentInputTokens,
+    live.currentOutputTokens,
+    model
+  ])
+  const streamingExtraCostBreakdown = React.useMemo(
+    () =>
+      streamingExtraUsage && model ? calculateCostBreakdown(streamingExtraUsage, model) : null,
+    [model, streamingExtraUsage]
+  )
+  const streamingExtraCost =
+    streamingExtraUsage && model ? calculateCost(streamingExtraUsage, model) : null
+  const totalInputCost = sumNullableCost(
+    live.cumulativeInputCost ?? null,
+    streamingExtraCostBreakdown?.inputCost ?? null
+  )
+  const totalOutputCost = sumNullableCost(
+    live.cumulativeOutputCost ?? null,
+    streamingExtraCostBreakdown?.outputCost ?? null
+  )
+  const totalCacheReadCost = sumNullableCost(
+    live.cumulativeCacheReadCost ?? null,
+    streamingExtraCostBreakdown?.cacheReadCost ?? null
+  )
+  const totalCacheCreationCost = sumNullableCost(
+    live.cumulativeCacheCreationCost ?? null,
+    streamingExtraCostBreakdown?.cacheCreationCost ?? null
+  )
+  const totalCost = sumNullableCost(live.cumulativeTotalCost ?? null, streamingExtraCost ?? null)
+  const metricPricing = React.useMemo(() => {
+    const inputPrice = model?.inputPrice ?? null
+    const outputPrice = model?.outputPrice ?? null
+    const cacheReadPrice = model?.cacheHitPrice ?? (inputPrice != null ? inputPrice * 0.1 : null)
+    const cacheCreatePrice =
+      model?.cacheCreationPrice ?? (inputPrice != null ? inputPrice * 1.25 : null)
+    return { inputPrice, outputPrice, cacheReadPrice, cacheCreatePrice }
+  }, [model])
+  const buildCostTitle = React.useCallback(
+    (label: string, tokens: number, pricePerMillion: number | null): string | undefined => {
+      if (pricePerMillion == null || !Number.isFinite(pricePerMillion) || tokens <= 0)
+        return undefined
+      return t('input.runtimeMetrics.cost', {
+        defaultValue: '{{label}}: {{cost}}',
+        label,
+        cost: formatCost((tokens * pricePerMillion) / 1_000_000)
+      })
+    },
+    [t]
+  )
   const latestTps = toFinitePositiveNumber(live.latestRequestTiming?.tps)
   const latestTtftMs = toFinitePositiveNumber(live.latestRequestTiming?.ttftMs)
   const statusView = React.useMemo<RuntimeStatusView>(() => {
@@ -917,6 +1061,39 @@ function ComposerRuntimeStatus({
     t
   ])
   const StatusIcon = statusView.Icon
+  const totalCostRows = React.useMemo(
+    () =>
+      [
+        {
+          key: 'input',
+          label: t('input.runtimeMetrics.input', { defaultValue: 'Uncached input' }),
+          color: '#38bdf8',
+          value: totalInputCost
+        },
+        {
+          key: 'cacheHit',
+          label: t('input.runtimeMetrics.cacheHit', { defaultValue: 'Cache hit' }),
+          color: '#84cc16',
+          value: totalCacheReadCost
+        },
+        {
+          key: 'cacheCreate',
+          label: t('input.runtimeMetrics.cacheCreate', { defaultValue: 'Cache write' }),
+          color: '#f59e0b',
+          value: totalCacheCreationCost
+        },
+        {
+          key: 'output',
+          label: t('input.runtimeMetrics.output', { defaultValue: 'Output' }),
+          color: '#a855f7',
+          value: totalOutputCost
+        }
+      ].filter(
+        (row): row is { key: string; label: string; color: string; value: number } =>
+          typeof row.value === 'number' && row.value > 0
+      ),
+    [t, totalCacheCreationCost, totalCacheReadCost, totalInputCost, totalOutputCost]
+  )
 
   return (
     <div
@@ -932,6 +1109,11 @@ function ComposerRuntimeStatus({
         tone="input"
         animate={isStreaming}
         duration={520}
+        title={buildCostTitle(
+          t('input.runtimeMetrics.input', { defaultValue: 'Uncached input' }),
+          inputTokens,
+          metricPricing.inputPrice
+        )}
       />
       <span className="shrink-0 text-muted-foreground/35">/</span>
       <RuntimeMetric
@@ -941,6 +1123,11 @@ function ComposerRuntimeStatus({
         animate={isStreaming}
         duration={620}
         suffix={formatCacheHitRate(cacheHitRate)}
+        title={buildCostTitle(
+          t('input.runtimeMetrics.cacheHit', { defaultValue: 'Cache hit' }),
+          cacheReadTokens,
+          metricPricing.cacheReadPrice
+        )}
       />
       <span className="shrink-0 text-muted-foreground/35">/</span>
       <RuntimeMetric
@@ -949,6 +1136,11 @@ function ComposerRuntimeStatus({
         tone="cacheCreate"
         animate={isStreaming}
         duration={620}
+        title={buildCostTitle(
+          t('input.runtimeMetrics.cacheCreate', { defaultValue: 'Cache write' }),
+          cacheCreationTokens,
+          metricPricing.cacheCreatePrice
+        )}
       />
       <span className="shrink-0 text-muted-foreground/35">/</span>
       <RuntimeMetric
@@ -957,6 +1149,11 @@ function ComposerRuntimeStatus({
         tone="output"
         animate
         duration={760}
+        title={buildCostTitle(
+          t('input.runtimeMetrics.output', { defaultValue: 'Output' }),
+          outputTokens,
+          metricPricing.outputPrice
+        )}
       />
       {latestTps !== null && (
         <>
@@ -989,6 +1186,56 @@ function ComposerRuntimeStatus({
         <StatusIcon className={cn('size-3 shrink-0', statusView.spin && 'animate-spin')} />
         <span className="min-w-0 truncate">{statusView.text}</span>
       </span>
+      {totalCost !== null && totalCost > 0 && (
+        <>
+          <span className="shrink-0 text-muted-foreground/35">/</span>
+          <HoverCard openDelay={180} closeDelay={100}>
+            <HoverCardTrigger asChild>
+              <span className="shrink-0 cursor-help tabular-nums text-muted-foreground/60">
+                <span className="text-muted-foreground/60">
+                  {t('input.runtimeMetrics.totalCost', { defaultValue: 'Cost' })}
+                </span>{' '}
+                <span className="font-medium text-emerald-500/85 dark:text-emerald-300/85">
+                  {formatCost(totalCost)}
+                </span>
+              </span>
+            </HoverCardTrigger>
+            <HoverCardContent
+              side="top"
+              align="end"
+              sideOffset={6}
+              className="w-[280px] rounded-lg border-[#262626] bg-[#101010] p-3 text-zinc-100 shadow-2xl"
+            >
+              <div className="space-y-1">
+                {totalCostRows.map((row) => (
+                  <div key={row.key} className="flex items-center justify-between gap-4 text-xs">
+                    <span className="flex min-w-0 items-center gap-1.5 text-zinc-400">
+                      <span
+                        className="size-1.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: row.color }}
+                      />
+                      <span className="truncate">{row.label}</span>
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums text-zinc-100">
+                      {formatCost(row.value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 border-t border-white/9 pt-2">
+                <div className="flex items-center justify-between gap-4 text-xs">
+                  <span className="truncate text-zinc-400">
+                    {t('input.runtimeMetrics.totalCost', { defaultValue: 'Cost' })}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-zinc-100">
+                    {formatCost(totalCost)}
+                  </span>
+                </div>
+              </div>
+            </HoverCardContent>
+          </HoverCard>
+        </>
+      )}
     </div>
   )
 }
@@ -1180,6 +1427,7 @@ export function InputArea({
   const [showOptimizationDialog, setShowOptimizationDialog] = React.useState(false)
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(0)
   const currentLanguage = useSettingsStore((state) => state.language)
+  const mainModelSelectionMode = useSettingsStore((state) => state.mainModelSelectionMode)
   const clarifyAutoAcceptRecommended = useSettingsStore(
     (state) => state.clarifyAutoAcceptRecommended
   )
@@ -1359,20 +1607,72 @@ export function InputArea({
     },
     [getMaxInputHeight, getMinInputHeight]
   )
+  const targetSession = useChatStore(
+    useShallow((s) => {
+      const targetSessionId = sessionId ?? s.activeSessionId
+      const idx = targetSessionId ? s.sessionsById[targetSessionId] : undefined
+      const session = idx !== undefined ? s.sessions[idx] : undefined
+      if (!session) return undefined
+      return {
+        id: session.id,
+        projectId: session.projectId,
+        pluginId: session.pluginId,
+        providerId: session.providerId,
+        modelId: session.modelId,
+        modelSelectionMode: session.modelSelectionMode
+      } as Pick<
+        import('@renderer/stores/chat-store').Session,
+        'id' | 'projectId' | 'pluginId' | 'providerId' | 'modelId' | 'modelSelectionMode'
+      >
+    })
+  )
+  const channels = useChannelStore((s) => s.channels)
+  const autoSelection = useUIStore((s) =>
+    targetSession ? (s.autoModelSelectionsBySession[targetSession.id] ?? null) : null
+  )
   const activeProvider = useProviderStore(
     useShallow((s) => {
       const { providers, activeProviderId, activeModelId } = s
       const fastConfig = modelRoute === 'fast' ? s.getFastProviderConfig() : null
-      const providerId = fastConfig?.providerId ?? activeProviderId
-      const modelId = fastConfig?.model ?? activeModelId
-      if (!providerId) return null
-      const p = providers.find((p) => p.id === providerId)
-      if (!p) return null
+      const session = isSessionComposer ? targetSession : null
+      const channel = session?.pluginId
+        ? (channels.find((item) => item.id === session.pluginId) ?? null)
+        : null
+      const selection = session
+        ? resolveSessionModelSelection({
+            session,
+            providers,
+            activeProviderId,
+            activeModelId,
+            globalMode: mainModelSelectionMode,
+            channelProviderId: channel?.providerId,
+            channelModelId: channel?.model
+          })
+        : null
+      const providerId =
+        fastConfig?.providerId ??
+        (selection
+          ? selection.isAutoModeActive && autoSelection?.providerId
+            ? autoSelection.providerId
+            : selection.providerId
+          : activeProviderId)
+      const modelId =
+        fastConfig?.model ??
+        (selection
+          ? selection.isAutoModeActive && autoSelection?.modelId
+            ? autoSelection.modelId
+            : selection.modelId
+          : activeModelId)
+      if (!providerId || !modelId) return null
+      const provider = providers.find((item) => item.id === providerId)
+      if (!provider) return null
+      const model = provider.models.find((item) => item.id === modelId)
+      if (!model) return null
       return {
-        apiKey: p.apiKey,
-        requiresApiKey: p.requiresApiKey,
-        type: p.type,
-        models: p.models,
+        apiKey: provider.apiKey,
+        requiresApiKey: provider.requiresApiKey,
+        type: provider.type,
+        models: provider.models,
         modelId
       }
     })
@@ -1381,6 +1681,10 @@ export function InputArea({
     if (!activeProvider) return false
     const model = activeProvider.models.find((m) => m.id === activeProvider.modelId)
     return modelSupportsVision(model, activeProvider.type)
+  }, [activeProvider])
+  const composerModelCfg = React.useMemo<AIModelConfig | null>(() => {
+    if (!activeProvider) return null
+    return activeProvider.models.find((m) => m.id === activeProvider.modelId) ?? null
   }, [activeProvider])
   const webSearchEnabled = useSettingsStore((s) => s.webSearchEnabled)
   const webSearchProvider = useSettingsStore((s) => s.webSearchProvider)
@@ -1404,18 +1708,6 @@ export function InputArea({
   const openFilePreview = useUIStore((s) => s.openFilePreview)
   const mode = useUIStore((s) => s.mode)
   // Only select fields actually used — avoids re-renders on every streaming message delta
-  const targetSession = useChatStore(
-    useShallow((s) => {
-      const targetSessionId = sessionId ?? s.activeSessionId
-      const idx = targetSessionId ? s.sessionsById[targetSessionId] : undefined
-      const session = idx !== undefined ? s.sessions[idx] : undefined
-      if (!session) return undefined
-      return { projectId: session.projectId } as Pick<
-        import('@renderer/stores/chat-store').Session,
-        'projectId'
-      >
-    })
-  )
   const activeProjectId = useChatStore((s) => {
     const targetSessionId = sessionId ?? s.activeSessionId
     const idx = targetSessionId ? s.sessionsById[targetSessionId] : undefined
@@ -1683,18 +1975,6 @@ export function InputArea({
     dispatchNextQueuedMessageForSession(activeSessionId)
   }, [activeSessionId])
 
-  const quoteQueuedMessage = React.useCallback(
-    (id: string) => {
-      if (!activeSessionId) return
-      const promoted = promotePendingSessionMessageForImmediateDispatch(activeSessionId, id)
-      if (!promoted || editingQueueItemId !== id) return
-      setEditingQueueItemId(null)
-      setEditingQueueText('')
-      setEditingQueueImages([])
-    },
-    [activeSessionId, editingQueueItemId]
-  )
-
   React.useEffect(() => {
     textRef.current = text
   }, [text])
@@ -1736,6 +2016,21 @@ export function InputArea({
   }, [])
 
   const hasFileReferences = React.useMemo(() => selectedFiles.length > 0, [selectedFiles])
+
+  const quoteQueuedMessage = React.useCallback(
+    (id: string) => {
+      if (!activeSessionId) return
+      const quoted = quotePendingSessionMessageIntoConversation(activeSessionId, id)
+      if (!quoted) return
+      if (editingQueueItemId === id) {
+        setEditingQueueItemId(null)
+        setEditingQueueText('')
+        setEditingQueueImages([])
+      }
+      toast.success(t('input.queueQuoted', { defaultValue: 'Inserted into conversation' }))
+    },
+    [activeSessionId, editingQueueItemId, t]
+  )
 
   const replaceSelectionWithText = React.useCallback(
     (
@@ -3998,7 +4293,7 @@ export function InputArea({
             <div className="flex w-full items-center justify-between gap-2">
               <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pr-1 [scrollbar-width:none]">
                 <div className="shrink-0">
-                  <ModelSwitcher modelRoute={modelRoute} />
+                  <ModelSwitcher modelRoute={modelRoute} sessionId={draftSessionId} />
                 </div>
                 {webSearchToggleControl}
                 {skillsMenuControl}
@@ -4076,6 +4371,7 @@ export function InputArea({
             pendingImageReads={pendingImageReads}
             contextCompressionStatus={contextCompressionStatus}
             contextCompressionStatusLabel={contextCompressionStatusLabel}
+            model={composerModelCfg}
             className="mt-1.5 px-3"
           />
         )}

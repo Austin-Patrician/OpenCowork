@@ -130,7 +130,6 @@ export async function* runAgentLoop(
     reason,
     ...(fullCompressionApplied ? { messages: [...conversationMessages] } : {})
   })
-
   // Always hand the final transcript back to the caller so it can replay the
   // conversation (e.g. generate a fallback report when no text was produced).
   // Using a generator-level try/finally guarantees the callback fires for
@@ -536,6 +535,11 @@ export async function* runAgentLoop(
           }
           continue
         }
+      }
+
+      if (config.signal.aborted) {
+        yield buildLoopEndEvent('aborted')
+        return
       }
 
       // Push assistant message to conversation

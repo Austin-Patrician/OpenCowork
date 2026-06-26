@@ -75,7 +75,11 @@
       "cacheCreate": "Cache write",
       "output": "Output",
       "tps": "TPS",
-      "ttft": "TTFT"
+      "ttft": "TTFT",
+      "cost": "{{label}}: {{cost}}",
+      "tpsHint": "Output tokens generated per second",
+      "ttftHint": "Time to first token",
+      "totalCost": "Cost"
     },
     "runtimeStatus": {
       "ready": "Ready",
@@ -128,6 +132,8 @@
     "queueResume": "Resume",
     "queueEditing": "Edit queued message",
     "queueQuote": "Quote",
+    "queueQuoted": "Inserted into conversation",
+    "queueQuoted": "Inserted into conversation",
     "queueImageCount": "{{count}} images",
     "queueImageOnly": "[Images only]",
     "slashSuggestions": "Command, plugin & skill suggestions",
@@ -865,6 +871,7 @@
     "copied": "Copied",
     "edit": "Edit",
     "skillLabel": "Skill",
+    "quotedLabel": "Quoted",
     "addSkill": "Add Skill",
     "changeSkill": "Change Skill",
     "removeSkill": "Remove Skill",

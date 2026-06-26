@@ -89,6 +89,7 @@ import { openDetachedSessionWindow, openSessionOrFocusDetached } from '@renderer
 import { cn } from '@renderer/lib/utils'
 import { ipcClient } from '@renderer/lib/ipc/ipc-client'
 import { IPC } from '@renderer/lib/ipc/channels'
+import { getDroppedLocalPaths, filterDirectories } from '@renderer/lib/drag-folder'
 import { generateSessionTitle } from '@renderer/lib/api/generate-title'
 import { resolveIntlLocale } from '@renderer/lib/i18n-language'
 import { clampLeftSidebarWidth, LEFT_SIDEBAR_DEFAULT_WIDTH } from './right-panel-defs'
@@ -427,6 +428,7 @@ export function WorkspaceSidebar(): React.JSX.Element {
   const [folderPickerTarget, setFolderPickerTarget] = useState<FolderPickerTarget | null>(null)
   const [featureMenuOpen, setFeatureMenuOpen] = useState(false)
   const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false)
+  const [isFolderDragOver, setIsFolderDragOver] = useState(false)
   const [chatsSectionCollapsed, setChatsSectionCollapsed] = useState(false)
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set())
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(() => new Set())
@@ -695,6 +697,43 @@ export function WorkspaceSidebar(): React.JSX.Element {
       toast.success(t('sidebar_toast.projectCreated'))
     },
     [createProject, openProjectHome, t]
+  )
+
+  const handleRevealProject = useCallback(
+    async (workingFolder?: string | null) => {
+      if (!workingFolder) return
+      const result = (await ipcClient.invoke(IPC.SHELL_SHOW_ITEM_IN_FOLDER, workingFolder)) as
+        | { error?: string }
+        | undefined
+      if (result && typeof result === 'object' && typeof result.error === 'string') {
+        toast.error(t('sidebar_toast.revealFailed'), { description: result.error })
+      }
+    },
+    [t]
+  )
+
+  const handleDropFolders = useCallback(
+    async (dataTransfer: DataTransfer | null) => {
+      const localPaths = getDroppedLocalPaths(dataTransfer)
+      if (localPaths.length === 0) return
+      const folders = await filterDirectories(localPaths)
+      if (folders.length === 0) {
+        toast.error(t('sidebar_toast.dropNotFolder'))
+        return
+      }
+      if (folders.length === 1) {
+        await handleCreateProjectWithDirectory(folders[0], null)
+        return
+      }
+      for (const folder of folders) {
+        await createProject({
+          name: deriveProjectNameFromFolder(folder),
+          workingFolder: folder
+        })
+      }
+      toast.success(t('sidebar_toast.projectsCreatedCount', { count: folders.length }))
+    },
+    [createProject, handleCreateProjectWithDirectory, t]
   )
 
   const handleCreateSession = useCallback(
@@ -1302,7 +1341,30 @@ export function WorkspaceSidebar(): React.JSX.Element {
             {navItems.slice(3).map(renderNavItem)}
           </div>
 
-          <div ref={treeScrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          <div
+            ref={treeScrollRef}
+            className={cn(
+              'min-h-0 flex-1 overflow-y-auto px-2 pb-2',
+              isFolderDragOver && 'rounded-lg ring-2 ring-primary/50 ring-inset'
+            )}
+            onDragOver={(event) => {
+              if (!Array.from(event.dataTransfer.types).includes('Files')) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'copy'
+              if (!isFolderDragOver) setIsFolderDragOver(true)
+            }}
+            onDragLeave={(event) => {
+              const next = event.relatedTarget as Node | null
+              if (next && event.currentTarget.contains(next)) return
+              setIsFolderDragOver(false)
+            }}
+            onDrop={(event) => {
+              if (!Array.from(event.dataTransfer.types).includes('Files')) return
+              event.preventDefault()
+              setIsFolderDragOver(false)
+              void handleDropFolders(event.dataTransfer)
+            }}
+          >
             <div className="mb-2 flex items-center justify-between gap-2 px-1">
               <button
                 type="button"
@@ -1543,6 +1605,16 @@ export function WorkspaceSidebar(): React.JSX.Element {
                                           <FolderInput className="size-4" />
                                           {t('sidebar.changeWorkingFolder')}
                                         </DropdownMenuItem>
+                                        {project.workingFolder && !project.sshConnectionId && (
+                                          <DropdownMenuItem
+                                            onClick={() =>
+                                              void handleRevealProject(project.workingFolder)
+                                            }
+                                          >
+                                            <ExternalLink className="size-4" />
+                                            {t('sidebar.revealInFolder')}
+                                          </DropdownMenuItem>
+                                        )}
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
                                           onClick={() => navigateProjectView(project.id, 'archive')}
@@ -1662,6 +1734,14 @@ export function WorkspaceSidebar(): React.JSX.Element {
                                 <FolderInput className="size-4" />
                                 {t('sidebar.changeWorkingFolder')}
                               </ContextMenuItem>
+                              {project.workingFolder && !project.sshConnectionId && (
+                                <ContextMenuItem
+                                  onClick={() => void handleRevealProject(project.workingFolder)}
+                                >
+                                  <ExternalLink className="size-4" />
+                                  {t('sidebar.revealInFolder')}
+                                </ContextMenuItem>
+                              )}
                               <ContextMenuSeparator />
                               <ContextMenuItem
                                 onClick={() => navigateProjectView(project.id, 'archive')}

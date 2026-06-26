@@ -257,13 +257,26 @@ export function sanitizeMessagesForToolReplay<T extends { role: string; content:
   const sanitized = messages.map((message) => {
     if (!Array.isArray(message.content)) return message
 
-    const nextContent = message.content.map((block) => {
+    let blockChanged = false
+    const nextContent: unknown[] = []
+    for (const block of message.content) {
+      // Drop null/undefined or type-less blocks. These can sneak in when an
+      // `undefined` element is pushed into a content array and later serialized
+      // (JSON.stringify turns array holes/undefined into `null`), which makes
+      // provider APIs reject the whole request with a 400 (invalid parameters).
       if (
         !block ||
         typeof block !== 'object' ||
-        (block as { type?: unknown }).type !== 'tool_use'
+        typeof (block as { type?: unknown }).type !== 'string'
       ) {
-        return block
+        blockChanged = true
+        changed = true
+        continue
+      }
+
+      if ((block as { type?: unknown }).type !== 'tool_use') {
+        nextContent.push(block)
+        continue
       }
       const toolUseBlock = block as {
         type: 'tool_use'
@@ -278,12 +291,16 @@ export function sanitizeMessagesForToolReplay<T extends { role: string; content:
           ? (toolUseBlock.input as Record<string, unknown>)
           : {}
       const nextInput = summarizeToolInputForHistory(toolName, toolInput)
-      if (nextInput === toolInput) return block
+      if (nextInput === toolInput) {
+        nextContent.push(block)
+        continue
+      }
+      blockChanged = true
       changed = true
-      return { ...toolUseBlock, input: nextInput }
-    })
+      nextContent.push({ ...toolUseBlock, input: nextInput })
+    }
 
-    return nextContent === message.content ? message : { ...message, content: nextContent }
+    return blockChanged ? { ...message, content: nextContent } : message
   })
 
   return changed ? sanitized : messages

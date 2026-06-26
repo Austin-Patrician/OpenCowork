@@ -120,6 +120,7 @@ function scoreManagedModelRichness(model: AIModelConfig | ManagedModelConfig): n
     'responsesImageGeneration',
     'enablePromptCache',
     'enableSystemPromptCache',
+    'cacheTtl',
     'requestOverrides',
     'serviceTier',
     'websocketUrl',
@@ -1206,6 +1207,7 @@ export const useProviderStore = create<ProviderStore>()(
           ...(responsesImageGeneration ? { responsesImageGeneration } : {}),
           enablePromptCache: activeModel?.enablePromptCache,
           enableSystemPromptCache: activeModel?.enableSystemPromptCache,
+          cacheTtl: activeModel?.cacheTtl ?? provider.cacheTtl,
           ...(provider.userAgent ? { userAgent: provider.userAgent } : {}),
           ...(requestOverrides ? { requestOverrides } : {}),
           ...(provider.instructionsPrompt
@@ -1325,6 +1327,7 @@ export const useProviderStore = create<ProviderStore>()(
           ...(responsesImageGeneration ? { responsesImageGeneration } : {}),
           enablePromptCache: model?.enablePromptCache,
           enableSystemPromptCache: model?.enableSystemPromptCache,
+          cacheTtl: model?.cacheTtl ?? provider.cacheTtl,
           ...(provider.userAgent ? { userAgent: provider.userAgent } : {}),
           ...(requestOverrides ? { requestOverrides } : {}),
           ...(provider.instructionsPrompt
@@ -1425,6 +1428,7 @@ export const useProviderStore = create<ProviderStore>()(
           ...(responsesImageGeneration ? { responsesImageGeneration } : {}),
           enablePromptCache: fastModel?.enablePromptCache,
           enableSystemPromptCache: fastModel?.enableSystemPromptCache,
+          cacheTtl: fastModel?.cacheTtl ?? provider.cacheTtl,
           ...(provider.userAgent ? { userAgent: provider.userAgent } : {}),
           ...(requestOverrides ? { requestOverrides } : {}),
           ...(provider.instructionsPrompt
